@@ -2,10 +2,14 @@
 
 use std::time::{Duration, Instant};
 
-use futures_util::{StreamExt, SinkExt};
+use futures_util::{SinkExt, StreamExt};
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
-use tokio::{net::{TcpListener, TcpStream}, sync::broadcast, time};
+use tokio::{
+    net::{TcpListener, TcpStream},
+    sync::broadcast,
+    time,
+};
 use tokio_tungstenite::tungstenite::Message;
 
 #[derive(Serialize, Deserialize, Debug, Clone)] // Telemetry to "send"
@@ -105,7 +109,8 @@ async fn main() {
 
     let listener = TcpListener::bind("127.0.0.1:8080").await.unwrap(); // Listen to ip and port
     println!("listening at ws://127.0.0.1:8080");
-    while let Ok((stream, addr)) = listener.accept().await { // wait for a connection
+    // wait for a connection
+    while let Ok((stream, addr)) = listener.accept().await {
         println!("new connection from {addr}");
         let tx_clone = tx.clone();
 
@@ -127,7 +132,7 @@ async fn handle_client(stream: TcpStream, tx: broadcast::Sender<TelemetryEnvelop
                         match serde_json::from_str::<CommandEnvelope>(&text) {
                             Ok(cmd) => println!("{cmd:#?}"),
                             Err(e) => {
-                                println!("failed to parse, error: {e}, data: {text}")
+                                println!("failed to parse, error: {e}, data: {text}");
                             }
                         }
                     }

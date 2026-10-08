@@ -1,4 +1,4 @@
-2026-10-08 Set up WebSockets
+x 2026-10-08 2026-10-08 Set up WebSockets
 2026-10-08 Set up RTSP / RTP
 2026-10-08 Read from fake sensors for testing
 2026-10-08 Convert fake sensors to real sensor inputs
