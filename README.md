@@ -1,3 +1,5 @@
+I'm writing this proof of concept assuming that all the systems are running on a single raspberry pi.
+
 # Payload
 ## Options for laser control
 ### 1: Run the system "blind", no laser tracking, just lookup table + testing and calibration

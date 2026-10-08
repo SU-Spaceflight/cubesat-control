@@ -1,0 +1,10 @@
+2026-10-08 Set up WebSockets
+2026-10-08 Set up RTSP / RTP
+2026-10-08 Read from fake sensors for testing
+2026-10-08 Convert fake sensors to real sensor inputs
+2026-10-08 Set up fake camera feed for testing
+2026-10-08 Read from real camera
+2026-10-08 Parse commands from server
+2026-10-08 Bundle telemetry to send via websockets
+2026-10-08 Set up CV on camera input
+2026-10-08 Set up servo control systems
