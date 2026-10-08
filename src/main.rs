@@ -35,6 +35,13 @@ struct CameraData {
     laser_y: Option<f32>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct CommandEnvelope {
+    dest: String,
+    cmd: String,
+    val: Option<f32>,
+}
+
 #[tokio::main]
 async fn main() {
     let start_time = Instant::now();
@@ -117,7 +124,12 @@ async fn handle_client(stream: TcpStream, tx: broadcast::Sender<TelemetryEnvelop
             msg = reciever.next() => {
                 match msg { // Check the different message types
                     Some(Ok(Message::Text(text))) => {
-                        println!("Command: {text}");
+                        match serde_json::from_str::<CommandEnvelope>(&text) {
+                            Ok(cmd) => println!("{cmd:#?}"),
+                            Err(e) => {
+                                println!("failed to parse, error: {e}, data: {text}")
+                            }
+                        }
                     }
                     Some(Ok(Message::Ping(_))) => {
                         println!("Keep Alive");

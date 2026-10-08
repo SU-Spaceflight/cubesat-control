@@ -9,7 +9,7 @@ async def receive_telemetry(websocket):
         async for message in websocket:
             data = json.loads(message)
             print(f"\n[TELEMETRY RECEIVED] {data['dest']} at {data.get('uptime_ms', 0)}ms")
-            print(json.dumps(data.get('payload', {}), indent=2))
+            print(json.dumps(data, indent=2))
     except websockets.exceptions.ConnectionClosed:
         print("Connection to Cubesat lost.")
 
