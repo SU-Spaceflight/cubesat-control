@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use rand::{RngExt, SeedableRng};
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use tokio::{sync::broadcast, time};
 
@@ -74,8 +74,16 @@ async fn main() {
                 payload: PayloadData::Camera(CameraData {
                     target_x: rng.random_range(0.0..40.0),
                     target_y: rng.random_range(0.0..40.0),
-                    laser_x: if laser_found {Some(rng.random_range(0.0..40.0))} else {None},
-                    laser_y: if laser_found {Some(rng.random_range(0.0..40.0))} else {None},
+                    laser_x: if laser_found {
+                        Some(rng.random_range(0.0..40.0))
+                    } else {
+                        None
+                    },
+                    laser_y: if laser_found {
+                        Some(rng.random_range(0.0..40.0))
+                    } else {
+                        None
+                    },
                 }),
             };
 

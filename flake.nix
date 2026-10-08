@@ -1,5 +1,5 @@
 {
-  description = "Rust for RPI 4";
+  description = "Rust (Native + RPI 4 Cross) and Python";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -32,6 +32,7 @@
         devShells.default = pkgs.mkShell {
           buildInputs = [
             rustToolchain
+            pkgs.python3
           ];
 
           nativeBuildInputs = [
@@ -40,9 +41,25 @@
 
           packages = with pkgs; [
             bacon
+            python3Packages.pip
+            python3Packages.virtualenv
           ];
 
-          CARGO_BUILD_TARGET = "aarch64-unknown-linux-gnu";
+          shellHook = ''
+            if [ ! -d ".venv" ]; then
+              echo "Creating Python virtual environment in .venv..."
+              python -m venv .venv
+            fi
+
+            source .venv/bin/activate
+
+            if [ -f "requirements.txt" ]; then
+              echo "Installing Python packages from requirements.txt..."
+              pip install -r requirements.txt --quiet
+            else
+              echo "No requirements.txt found. Skipping pip install."
+            fi
+          '';
 
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "${crossPkgs.stdenv.cc}/bin/${crossPkgs.stdenv.cc.targetPrefix}cc";
 
