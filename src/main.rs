@@ -60,6 +60,7 @@ async fn main() {
     });
 
     tokio::spawn(async move {
+        // Send some random target info
         let mut interval = time::interval(Duration::from_millis(33));
 
         loop {
@@ -92,6 +93,7 @@ async fn main() {
     });
 
     loop {
+        // print whatever we get from rx
         if let Ok(msg) = rx.recv().await {
             let json_out = serde_json::to_string(&msg).unwrap();
             println!("{}", json_out)
