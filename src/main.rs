@@ -1,10 +1,10 @@
 #![allow(clippy::unwrap_used)] // Just for preliminary testing
 
 use futures_util::{SinkExt, StreamExt};
-use rand::RngExt;
+use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
-use tokio::sync::broadcast;
+use tokio::sync::mpsc;
 use tokio::time;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
@@ -37,8 +37,7 @@ struct CameraData {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
-enum SystemCommands {
-}
+enum SystemCommands {}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -63,10 +62,16 @@ enum CommandEnvelope {
 #[tokio::main]
 async fn main() {
     let start_time = Instant::now();
-    let (tx, _) = broadcast::channel::<TelemetryEnvelope>(16);
+    let (tx, mut rx) = mpsc::channel::<TelemetryEnvelope>(16);
 
     let tx_sensor = tx.clone();
     let tx_camera = tx.clone();
+
+    let mut rng_for_seed = rand::rng();
+    let seed: u64 = rng_for_seed.random();
+
+    let mut temperature_rng = ChaCha8Rng::seed_from_u64(seed);
+    let mut targeting_rng = ChaCha8Rng::seed_from_u64(seed);
 
     tokio::spawn(async move {
         // Tokio task to send a random temperature on tx_sensor every second
@@ -74,9 +79,7 @@ async fn main() {
 
         loop {
             interval.tick().await;
-            let mut rng = rand::rng();
-
-            let temp = rng.random_range(30.0..100.0);
+            let temp = temperature_rng.random_range(30.0..100.0);
 
             let msg = TelemetryEnvelope {
                 dest: "telemetry_client".to_string(),
@@ -84,7 +87,7 @@ async fn main() {
                 payload: PayloadData::Sensor(SensorData { cpu_temp_c: temp }),
             };
 
-            let _ = tx_sensor.send(msg);
+            let _ = tx_sensor.send(msg).await;
         }
     });
 
@@ -94,30 +97,28 @@ async fn main() {
 
         loop {
             interval.tick().await;
-            let mut rng = rand::rng();
-
-            let laser_found: bool = rng.random();
+            let laser_found: bool = targeting_rng.random();
 
             let msg = TelemetryEnvelope {
                 dest: "targeting computer".to_string(),
                 uptime_ms: start_time.elapsed().as_millis(),
                 payload: PayloadData::Camera(CameraData {
-                    target_x: rng.random_range(0.0..40.0),
-                    target_y: rng.random_range(0.0..40.0),
+                    target_x: targeting_rng.random_range(0.0..40.0),
+                    target_y: targeting_rng.random_range(0.0..40.0),
                     laser_x: if laser_found {
-                        Some(rng.random_range(0.0..40.0))
+                        Some(targeting_rng.random_range(0.0..40.0))
                     } else {
                         None
                     },
                     laser_y: if laser_found {
-                        Some(rng.random_range(0.0..40.0))
+                        Some(targeting_rng.random_range(0.0..40.0))
                     } else {
                         None
                     },
                 }),
             };
 
-            let _ = tx_camera.send(msg);
+            let _ = tx_camera.send(msg).await;
         }
     });
 
@@ -129,7 +130,6 @@ async fn main() {
     println!("connected");
 
     let (mut sender, mut receiver) = ws_stream.split();
-    let mut rx = tx.subscribe();
 
     loop {
         tokio::select! {
@@ -161,7 +161,7 @@ async fn main() {
             }
 
             // Forward internal broadcast telemetry to the Server
-            Ok(telemetry) = rx.recv() => {
+            Some(telemetry) = rx.recv() => {
                 let json = serde_json::to_string(&telemetry).unwrap();
                 if sender.send(Message::Text(json.into())).await.is_err() {
                     println!("Failed to send telemetry");
