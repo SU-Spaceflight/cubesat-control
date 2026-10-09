@@ -4,8 +4,8 @@ use futures_util::{SinkExt, StreamExt};
 use rand::{RngExt, rand_core::UnwrapErr, rngs::SysRng};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
-use tokio::sync::mpsc;
-use tokio::time;
+use tokio::sync::{self};
+use tokio::time::{self, sleep};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
 #[derive(Serialize, Deserialize, Debug, Clone)] // Telemetry to "send"
@@ -94,10 +94,11 @@ enum CommandEnvelope {
 #[tokio::main]
 async fn main() {
     let start_time = Instant::now();
-    let (tx, mut rx) = mpsc::channel::<TelemetryEnvelope>(16);
+    let (telemetry_tx, mut telemetry_rx) = sync::mpsc::channel::<TelemetryEnvelope>(16);
+    let (targeting_tx, mut targeting_rx) = sync::watch::channel((Point { x: 0.0, y: 0.0 }, None));
 
-    let tx_sensor = tx.clone();
-    let tx_camera = tx.clone();
+    let tx_sensor = telemetry_tx.clone();
+    let tx_camera = telemetry_tx.clone();
 
     tokio::spawn(async move {
         // Tokio task to send a random temperature on tx_sensor every second
@@ -134,15 +135,29 @@ async fn main() {
                         target_x: target_pos.x,
                         target_y: target_pos.y,
                         laser_x: laser_pos.map(|p| p.x),
-                        laser_y: laser_pos.map(|p| p.y)
+                        laser_y: laser_pos.map(|p| p.y),
                     }),
                 };
 
-                let _ = tx_camera.send(msg).await;
+                let _ = tx_camera.try_send(msg);
+                let _ = targeting_tx.send((target_pos, laser_pos));
             }
         }
     });
 
+    // Targeting computer
+    tokio::spawn(async move {
+        loop {
+            println!("{:#?}", *targeting_rx.borrow_and_update());
+            sleep(Duration::from_secs(20)).await;
+            if targeting_rx.changed().await.is_err() {
+                println!("Error in targetting computer input channel");
+                break;
+            }
+        }
+    });
+
+    // telemtry and command handling
     let connect_addr = "ws://127.0.0.1:8080";
     println!("connecting to server at {connect_addr}");
 
@@ -182,7 +197,7 @@ async fn main() {
             }
 
             // Forward internal broadcast telemetry to the Server
-            Some(telemetry) = rx.recv() => {
+            Some(telemetry) = telemetry_rx.recv() => {
                 let json = serde_json::to_string(&telemetry).unwrap();
                 if sender.send(Message::Text(json.into())).await.is_err() {
                     println!("Failed to send telemetry");
