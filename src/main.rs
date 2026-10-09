@@ -142,9 +142,6 @@ async fn main() {
                                 match cmd {
                                     CommandEnvelope::Flight(FlightComputerCommands::YawRight) => println!("Forwarded YawRight to Flight Computer"),
                                     CommandEnvelope::Gimbal(GimbalCommands::TrimPan(val)) => println!("Adjusting Gimbal Pan trim by {val} degrees"),
-
-                                    #[allow(unreachable_patterns)]
-                                    _ => println!("{cmd:#?}"),
                                 }
                             }
                             Err(e) => {
