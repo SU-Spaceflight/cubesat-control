@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used)] // Just for preliminary testing
 
 use futures_util::{SinkExt, StreamExt};
-use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
+use rand::{RngExt, rand_core::UnwrapErr, rngs::SysRng};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -35,6 +35,38 @@ struct CameraData {
     laser_y: Option<f32>,
 }
 
+// Fake sensors for testing
+async fn temperature_sensor() -> f32 {
+    UnwrapErr(SysRng).random()
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+struct Point {
+    x: f32,
+    y: f32,
+}
+
+async fn get_target_location() -> Option<Point> {
+    if UnwrapErr(SysRng).random() {
+        return Some(Point {
+            x: UnwrapErr(SysRng).random(),
+            y: UnwrapErr(SysRng).random(),
+        });
+    }
+    None
+}
+
+async fn get_laser_location() -> Option<Point> {
+    if UnwrapErr(SysRng).random() {
+        return Some(Point {
+            x: UnwrapErr(SysRng).random(),
+            y: UnwrapErr(SysRng).random(),
+        });
+    }
+    None
+}
+
+// Command chain
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 enum SystemCommands {}
@@ -67,19 +99,13 @@ async fn main() {
     let tx_sensor = tx.clone();
     let tx_camera = tx.clone();
 
-    let mut rng_for_seed = rand::rng();
-    let seed: u64 = rng_for_seed.random();
-
-    let mut temperature_rng = ChaCha8Rng::seed_from_u64(seed);
-    let mut targeting_rng = ChaCha8Rng::seed_from_u64(seed);
-
     tokio::spawn(async move {
         // Tokio task to send a random temperature on tx_sensor every second
         let mut interval = time::interval(Duration::from_secs(10));
 
         loop {
             interval.tick().await;
-            let temp = temperature_rng.random_range(30.0..100.0);
+            let temp = temperature_sensor().await;
 
             let msg = TelemetryEnvelope {
                 dest: "telemetry_client".to_string(),
@@ -97,28 +123,23 @@ async fn main() {
 
         loop {
             interval.tick().await;
-            let laser_found: bool = targeting_rng.random();
 
-            let msg = TelemetryEnvelope {
-                dest: "targeting computer".to_string(),
-                uptime_ms: start_time.elapsed().as_millis(),
-                payload: PayloadData::Camera(CameraData {
-                    target_x: targeting_rng.random_range(0.0..40.0),
-                    target_y: targeting_rng.random_range(0.0..40.0),
-                    laser_x: if laser_found {
-                        Some(targeting_rng.random_range(0.0..40.0))
-                    } else {
-                        None
-                    },
-                    laser_y: if laser_found {
-                        Some(targeting_rng.random_range(0.0..40.0))
-                    } else {
-                        None
-                    },
-                }),
-            };
+            if let Some(target_pos) = get_target_location().await {
+                let laser_pos = get_laser_location().await;
 
-            let _ = tx_camera.send(msg).await;
+                let msg = TelemetryEnvelope {
+                    dest: "targeting computer".to_string(),
+                    uptime_ms: start_time.elapsed().as_millis(),
+                    payload: PayloadData::Camera(CameraData {
+                        target_x: target_pos.x,
+                        target_y: target_pos.y,
+                        laser_x: laser_pos.map(|p| p.x),
+                        laser_y: laser_pos.map(|p| p.y)
+                    }),
+                };
+
+                let _ = tx_camera.send(msg).await;
+            }
         }
     });
 
