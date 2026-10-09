@@ -36,10 +36,28 @@ struct CameraData {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct CommandEnvelope {
-    dest: String,
-    cmd: String,
-    val: Option<f32>,
+#[serde(rename_all = "snake_case")]
+enum SystemCommands {
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+enum FlightComputerCommands {
+    YawRight,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+enum GimbalCommands {
+    TrimPan(f32),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "dest", content = "cmd", rename_all = "snake_case")]
+enum CommandEnvelope {
+    System(SystemCommands),
+    Flight(FlightComputerCommands),
+    Gimbal(GimbalCommands),
 }
 
 #[tokio::main]
@@ -121,14 +139,16 @@ async fn main() {
                     Some(Ok(Message::Text(text))) => {
                         match serde_json::from_str::<CommandEnvelope>(&text) {
                             Ok(cmd) => {
-                                if cmd.cmd == "ping" {
-                                    println!("Keep alive command");
-                                } else {
-                                    println!("{cmd:#?}");
+                                match cmd {
+                                    CommandEnvelope::Flight(FlightComputerCommands::YawRight) => println!("Forwarded YawRight to Flight Computer"),
+                                    CommandEnvelope::Gimbal(GimbalCommands::TrimPan(val)) => println!("Adjusting Gimbal Pan trim by {val} degrees"),
+
+                                    #[allow(unreachable_patterns)]
+                                    _ => println!("{cmd:#?}"),
                                 }
                             }
                             Err(e) => {
-                                println!("failed to parse command: {text}. Error: {e}");
+                                println!("Error: {e}, command: {text}");
                             }
                         }
                     }
