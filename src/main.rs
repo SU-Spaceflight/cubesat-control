@@ -1,16 +1,12 @@
 #![allow(clippy::unwrap_used)] // Just for preliminary testing
 
-use std::time::{Duration, Instant};
-
 use futures_util::{SinkExt, StreamExt};
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
-use tokio::{
-    net::{TcpListener, TcpStream},
-    sync::broadcast,
-    time,
-};
-use tokio_tungstenite::tungstenite::Message;
+use std::time::{Duration, Instant};
+use tokio::sync::broadcast;
+use tokio::time;
+use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
 #[derive(Serialize, Deserialize, Debug, Clone)] // Telemetry to "send"
 struct TelemetryEnvelope {
@@ -56,7 +52,7 @@ async fn main() {
 
     tokio::spawn(async move {
         // Tokio task to send a random temperature on tx_sensor every second
-        let mut interval = time::interval(Duration::from_secs(1));
+        let mut interval = time::interval(Duration::from_secs(10));
 
         loop {
             interval.tick().await;
@@ -76,7 +72,7 @@ async fn main() {
 
     tokio::spawn(async move {
         // Send some random target info
-        let mut interval = time::interval(Duration::from_millis(33));
+        let mut interval = time::interval(Duration::from_secs(5));
 
         loop {
             interval.tick().await;
@@ -107,50 +103,52 @@ async fn main() {
         }
     });
 
-    let listener = TcpListener::bind("127.0.0.1:8080").await.unwrap(); // Listen to ip and port
-    println!("listening at ws://127.0.0.1:8080");
-    // wait for a connection
-    while let Ok((stream, addr)) = listener.accept().await {
-        println!("new connection from {addr}");
-        let tx_clone = tx.clone();
+    let connect_addr = "ws://127.0.0.1:8080";
+    println!("connecting to server at {connect_addr}");
 
-        tokio::spawn(handle_client(stream, tx_clone)); // start the handler
-    }
-}
+    let (ws_stream, _) = connect_async(connect_addr).await.unwrap();
 
-async fn handle_client(stream: TcpStream, tx: broadcast::Sender<TelemetryEnvelope>) {
-    let ws_stream = tokio_tungstenite::accept_async(stream).await.unwrap();
+    println!("connected");
 
-    let (mut sender, mut reciever) = ws_stream.split();
+    let (mut sender, mut receiver) = ws_stream.split();
     let mut rx = tx.subscribe();
 
     loop {
         tokio::select! {
-            msg = reciever.next() => {
-                match msg { // Check the different message types
+            // Read incoming routed commands and keep-alives from Python
+            msg = receiver.next() => {
+                match msg {
                     Some(Ok(Message::Text(text))) => {
                         match serde_json::from_str::<CommandEnvelope>(&text) {
-                            Ok(cmd) => println!("{cmd:#?}"),
+                            Ok(cmd) => {
+                                if cmd.cmd == "ping" {
+                                    println!("Keep alive command");
+                                } else {
+                                    println!("{cmd:#?}");
+                                }
+                            }
                             Err(e) => {
-                                println!("failed to parse, error: {e}, data: {text}");
+                                println!("failed to parse command: {text}. Error: {e}");
                             }
                         }
                     }
                     Some(Ok(Message::Ping(_))) => {
                         println!("Keep Alive");
                     }
-                    Some(Ok(Message::Close(_))) => {
-                        println!("Client Disconnected");
-                        break
+                    Some(Ok(Message::Close(_))) | None => {
+                        println!("Server disconnected");
+                        break;
                     }
                     _ => {}
                 }
             }
 
-            Ok(telemetry) = rx.recv() => { // forward internal telemetry over the websocket
+            // Forward internal broadcast telemetry to the Server
+            Ok(telemetry) = rx.recv() => {
                 let json = serde_json::to_string(&telemetry).unwrap();
                 if sender.send(Message::Text(json.into())).await.is_err() {
-                    eprintln!("Failed to print telemetry");
+                    println!("Failed to send telemetry");
+                    break;
                 }
             }
         }
