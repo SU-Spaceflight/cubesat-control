@@ -8,39 +8,43 @@ use tokio::sync::{self};
 use tokio::time::{self, sleep};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
-#[derive(Serialize, Deserialize, Debug, Clone)] // Telemetry to "send"
+#[derive(Serialize, Deserialize, Debug, Clone)] // Telemetry to send
 struct TelemetryEnvelope {
-    dest: String,
     uptime_ms: u128,
-    payload: PayloadData,
+    #[serde(flatten)]
+    data: TelemetryData,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)] // Data to send
-#[serde(untagged)]
-enum PayloadData {
+#[serde(tag = "dest", content = "payload", rename_all = "snake_case")]
+enum TelemetryData {
     Sensor(SensorData),
     Camera(CameraData),
     Tele(TargetingTele),
     System(SystemData),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)] // Sample sensor data for testing
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 struct SensorData {
     cpu_temp_c: f32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 struct SystemData {
     status: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)] // Sample sensor data for testing
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 struct TargetingTele {
     target: Point,
     laser: Option<Point>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)] // Pretend we've already found the target, and might know the laser position
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 struct CameraData {
     target_x: f32,
     target_y: f32,
@@ -126,9 +130,8 @@ async fn main() {
             let temp = temperature_sensor().await;
 
             let msg = TelemetryEnvelope {
-                dest: "telemetry_client".to_string(),
                 uptime_ms: start_time.elapsed().as_millis(),
-                payload: PayloadData::Sensor(SensorData { cpu_temp_c: temp }),
+                data: TelemetryData::Sensor(SensorData { cpu_temp_c: temp }),
             };
 
             let _ = tx_sensor.send(msg).await;
@@ -219,9 +222,8 @@ async fn main() {
                 let latest_cv_state = *state_rx.borrow();
 
                 let msg = TelemetryEnvelope {
-                    dest: "telemetry_client".to_string(),
                     uptime_ms: start_time.elapsed().as_millis(),
-                    payload: PayloadData::Tele(TargetingTele { target: latest_cv_state.0, laser: latest_cv_state.1 }),
+                    data: TelemetryData::Tele( TargetingTele { target: latest_cv_state.0, laser: latest_cv_state.1 }),
                 };
 
                 let json = serde_json::to_string(&msg).unwrap();
