@@ -62,7 +62,7 @@ async def main():
         file=sys.stderr,
     )
 
-    async with websockets.serve(handle_cubesat, uri, port):
+    async with websockets.serve(handle_cubesat, uri, port, ping_interval=5.0, ping_timeout=10.0):
         await asyncio.Future()  # Run forever
 
 
