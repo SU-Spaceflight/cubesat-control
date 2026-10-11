@@ -67,6 +67,7 @@ struct Point {
 
 #[allow(clippy::unused_async)] // For testing
 async fn get_target_location() -> Option<Point> {
+    sleep(Duration::from_secs(3)).await; // Simulate CV
     if UnwrapErr(SysRng).random() {
         return Some(Point {
             x: UnwrapErr(SysRng).random(),
@@ -78,6 +79,7 @@ async fn get_target_location() -> Option<Point> {
 
 #[allow(clippy::unused_async)] // For testing
 async fn get_laser_location() -> Option<Point> {
+    sleep(Duration::from_secs(3)).await;
     if UnwrapErr(SysRng).random() {
         return Some(Point {
             x: UnwrapErr(SysRng).random(),
@@ -131,7 +133,7 @@ impl MockServo {
             name: name.to_string(),
             channel,
             current_angle: 90.0,
-            max_angle
+            max_angle,
         }
     }
 
@@ -207,9 +209,8 @@ async fn main() {
     tokio::spawn(async move {
         loop {
             println!("{:?}", *targeting_rx.borrow_and_update());
-            sleep(Duration::from_secs(1)).await; // Simulate complex calculation
             if targeting_rx.changed().await.is_err() {
-                println!("Error in targetting computer input channel");
+                println!("Error in targeting computer input channel");
                 break;
             }
         }
