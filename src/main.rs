@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used)] // Just for preliminary testing
+#![allow(clippy::too_many_lines)]
 
 use futures_util::{SinkExt, StreamExt};
 use rand::{RngExt, rand_core::UnwrapErr, rngs::SysRng};
@@ -101,6 +102,9 @@ enum FlightComputerCommands {
 #[serde(rename_all = "snake_case")]
 enum GimbalCommands {
     TrimPan(f32),
+    TrimTilt(f32),
+    SetPan(f32),
+    SetTilt(f32),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -109,6 +113,51 @@ enum CommandEnvelope {
     System(SystemCommands),
     Flight(FlightComputerCommands),
     Gimbal(GimbalCommands),
+}
+
+// Servos
+
+pub struct MockServo {
+    name: String,
+    channel: u8,
+    current_angle: f32,
+    max_angle: f32,
+}
+
+impl MockServo {
+    #[must_use]
+    pub fn new(name: &str, channel: u8, max_angle: f32) -> Self {
+        Self {
+            name: name.to_string(),
+            channel,
+            current_angle: 90.0,
+            max_angle
+        }
+    }
+
+    pub fn apply_trim(&mut self, trim_val: f32) {
+        let new_angle = self.current_angle + trim_val;
+        self.set_absolute(new_angle);
+    }
+
+    pub fn set_absolute(&mut self, angle: f32) {
+        self.current_angle = angle.clamp(0.0, self.max_angle);
+        self.update_hardware();
+    }
+
+    fn update_hardware(&self) {
+        let pulse_width_ms = 1.0 + (self.current_angle / self.max_angle);
+        let duty_cycle = pulse_width_ms / 20.0;
+
+        println!(
+            "Servo: {} (CH {}) | Angle: {:.1}° | Pulse: {:.3}ms | Duty: {:.2}%",
+            self.name,
+            self.channel,
+            self.current_angle,
+            pulse_width_ms,
+            duty_cycle * 100.0
+        );
+    }
 }
 
 #[tokio::main]
@@ -166,6 +215,9 @@ async fn main() {
         }
     });
 
+    let mut pan_servo = MockServo::new("Pan Servo", 0, 180.0);
+    let mut tilt_servo = MockServo::new("Tilt Servo", 1, 180.0);
+
     // telemtry and command handling
     let connect_addr = "ws://127.0.0.1:8080";
     println!("connecting to server at {connect_addr}");
@@ -190,7 +242,22 @@ async fn main() {
                             Ok(cmd) => {
                                 match cmd {
                                     CommandEnvelope::Flight(FlightComputerCommands::YawRight) => println!("Forwarded YawRight to Flight Computer"),
-                                    CommandEnvelope::Gimbal(GimbalCommands::TrimPan(val)) => println!("Adjusting Gimbal Pan trim by {val} degrees"),
+                                    CommandEnvelope::Gimbal(GimbalCommands::TrimPan(val)) => {
+                                        println!("Adjusting Gimbal Pan trim by {val} degrees");
+                                        pan_servo.apply_trim(val);
+                                    },
+                                    CommandEnvelope::Gimbal(GimbalCommands::TrimTilt(val)) => {
+                                        println!("Adjusting Gimbal Tilt trim by {val} degrees");
+                                        tilt_servo.apply_trim(val);
+                                    }
+                                    CommandEnvelope::Gimbal(GimbalCommands::SetPan(val)) => {
+                                        println!("Setting Gimbal Pan trim to {val} degrees");
+                                        pan_servo.set_absolute(val);
+                                    },
+                                    CommandEnvelope::Gimbal(GimbalCommands::SetTilt(val)) => {
+                                        println!("Setting Gimbal Tilt trim to {val} degrees");
+                                        pan_servo.set_absolute(val);
+                                    },
                                 }
                             }
                             Err(e) => {

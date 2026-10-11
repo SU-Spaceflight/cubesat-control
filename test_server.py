@@ -67,6 +67,7 @@ async def send_commands(websocket, logger):
     """Simulates sending routed commands and keep-alives to the Pi."""
     test_commands = [
         {"dest": "gimbal", "cmd": {"trim_pan": 2.5}},
+        {"dest": "gimbal", "cmd": {"trim_tilt": -8.0}},
         {"dest": "flight", "cmd": "yaw_right"},
     ]
 
