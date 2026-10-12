@@ -1,8 +1,12 @@
 use std::time::{Duration, Instant};
 
-use tokio::{sync::watch, task::JoinHandle};
+use tokio::{
+    sync::{mpsc, watch},
+    task::JoinHandle,
+};
+use tracing::{trace, info, warn, error};
 
-use crate::vision::CvOutput;
+use crate::{arbiter::LocalCommand, vision::CvOutput};
 
 pub struct PidController {
     kp: f32,
@@ -50,7 +54,10 @@ impl PidController {
     }
 }
 
-pub fn spawn_targeting_computer(mut rx: watch::Receiver<CvOutput>) -> JoinHandle<()> {
+pub fn spawn_targeting_computer(
+    mut rx: watch::Receiver<CvOutput>,
+    tx: mpsc::Sender<LocalCommand>,
+) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut pan_pid = PidController::new(0.02, 0.001, 0.005, 5.0);
         let mut tilt_pid = PidController::new(0.02, 0.001, 0.005, 5.0);
@@ -65,9 +72,12 @@ pub fn spawn_targeting_computer(mut rx: watch::Receiver<CvOutput>) -> JoinHandle
         let degrees_per_pixel_x = 0.05;
         let degrees_per_pixel_y = 0.05;
 
+        let mut target_acquired = false;
+        let mut laser_acquired = false;
+
         loop {
             if rx.changed().await.is_err() {
-                println!("Error in targeting computer input channel");
+                error!("Error in targeting computer input channel");
                 break;
             }
 
@@ -76,21 +86,44 @@ pub fn spawn_targeting_computer(mut rx: watch::Receiver<CvOutput>) -> JoinHandle
             let dt = now.duration_since(last_time).as_secs_f32();
             last_time = now;
 
+            let currently_has_target = cv_state.target.is_some();
+            if currently_has_target != target_acquired {
+                target_acquired = currently_has_target;
+                if target_acquired {
+                    info!("Target acquired");
+                } else {
+                    info!("Target lost");
+                }
+            }
+
+            let currently_has_laser = cv_state.laser.is_some();
+            if currently_has_laser != laser_acquired {
+                laser_acquired = currently_has_laser;
+                if laser_acquired {
+                    info!("Laser acquired");
+                } else {
+                    info!("Laser lost");
+                }
+            }
+
             match (cv_state.target, cv_state.laser) {
                 (Some(target), Some(laser)) => {
                     last_laser_seen = now;
                     let pan_trim = pan_pid.calculate(target.x, laser.x, dt);
                     let tilt_trim = tilt_pid.calculate(target.y, laser.y, dt);
 
-                    println!(
-                        "Target ({:.1}, {:.1}) -> Cmd: Pan {:+.2}°, Tilt {:+.2}°",
-                        target.x, target.y, pan_trim, tilt_trim
-                    );
+                    trace!("PID Trim - Pan: {pan_trim:.3}, Tilt: {tilt_trim:.3}");
+
+                    if let Err(e) = tx.try_send(LocalCommand::AutoTrim {
+                        pan_delta: pan_trim,
+                        tilt_delta: tilt_trim,
+                    }) {
+                        warn!("Could not add to Arbiter channel {e}");
+                    }
                 }
 
                 (Some(target), None) => {
                     if now.duration_since(last_laser_seen) < laser_ttl {
-                        println!("Laser lost, continuing motion");
                     } else {
                         pan_pid.reset_integral();
                         tilt_pid.reset_integral();
@@ -98,10 +131,10 @@ pub fn spawn_targeting_computer(mut rx: watch::Receiver<CvOutput>) -> JoinHandle
                         let pan_error = (target.x - optical_center_x) * degrees_per_pixel_x;
                         let tilt_error = (target.y - optical_center_y) * degrees_per_pixel_y;
 
-                        println!(
-                            "[Blind] Target ({:.1}, {:.1}) -> Cmd: Pan {:+.2}°, Tilt {:+.2}°",
-                            target.x, target.y, pan_error, tilt_error
-                        );
+                        let _ = tx.try_send(LocalCommand::AutoTrim {
+                            pan_delta: pan_error,
+                            tilt_delta: tilt_error,
+                        });
                     }
                 }
 

@@ -17,6 +17,8 @@ pub enum GimbalCommands {
     TrimTilt(f32),
     SetPan(f32),
     SetTilt(f32),
+    ManualOverride { pan: f32, tilt: f32 },
+    SetTrackingMode(bool),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -8,7 +8,7 @@ from datetime import datetime
 
 import websockets
 
-def rotate_logs(log_dir="./log", max_logs=5):
+def rotate_logs(log_dir="./server-log", max_logs=5):
     """Keeps only the most recent `max_logs` connection logs and deletes the rest."""
     path = pathlib.Path(log_dir)
     path.mkdir(exist_ok=True)
@@ -23,7 +23,7 @@ def rotate_logs(log_dir="./log", max_logs=5):
 
 def setup_connection_logger(conn_id):
     """Sets up a logger for a specific connection that outputs to both a file and the console."""
-    log_dir = pathlib.Path("./log")
+    log_dir = pathlib.Path("./server-log")
     log_dir.mkdir(exist_ok=True)
 
     log_filename = log_dir / f"connection_{conn_id}.log"
@@ -112,7 +112,7 @@ async def main():
     port = 8080
 
     # Print root startup messages directly to stdout/stderr since they aren't tied to a specific connection
-    pathlib.Path("./log").mkdir(exist_ok=True)
+    pathlib.Path("./server-log").mkdir(exist_ok=True)
     print(f"Starting GCS WebSocket Server on ws://{uri}:{port}...", file=sys.stderr)
     print("Waiting for Cubesat simulator to connect (Run forever mode)...", file=sys.stderr)
 

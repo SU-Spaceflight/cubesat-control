@@ -7,10 +7,11 @@ use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::{sync::mpsc, time::sleep};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tracing::{debug, error, info, warn};
 
 use crate::{
-    commands::CommandEnvelope,
-    hardware::{MockServo, handle_command},
+    arbiter::LocalCommand,
+    commands::{CommandEnvelope, GimbalCommands},
     vision::Point,
 };
 
@@ -59,26 +60,25 @@ pub struct CameraData {
 pub async fn run_websocket_client(
     connect_addr: &str,
     mut telemetry_rx: mpsc::Receiver<TelemetryEnvelope>,
-    mut pan_servo: MockServo,
-    mut tilt_servo: MockServo,
+    command_tx: mpsc::Sender<LocalCommand>,
 ) {
     let reconnect_delay = Duration::from_secs(3);
     let watchdog_duration = Duration::from_secs(10);
 
     loop {
-        println!("Attempting to connect to GCS server at {connect_addr}");
+        info!("Attempting to connect to GCS server at {connect_addr}");
 
         // Attempt to connect
         let ws_stream = match connect_async(connect_addr).await {
             Ok((stream, _)) => stream,
             Err(e) => {
-                println!("Connection failed: {e}. Retrying in {reconnect_delay:?}");
+                warn!("Connection failed: {e}. Retrying in {reconnect_delay:?}");
                 sleep(reconnect_delay).await;
                 continue;
             }
         };
 
-        println!("Connected to GCS!");
+        info!("Connected to GCS!");
         let (mut sender, mut receiver) = ws_stream.split();
         let mut watchdog = Box::pin(sleep(watchdog_duration));
 
@@ -89,10 +89,10 @@ pub async fn run_websocket_client(
                         Some(Ok(Message::Text(text))) => {
                             match serde_json::from_str::<CommandEnvelope>(&text) {
                                 Ok(cmd) => {
-                                    handle_command(&cmd, &mut pan_servo, &mut tilt_servo);
+                                    handle_command(cmd, &command_tx).await;
                                 }
                                 Err(e) => {
-                                    println!("Error: {e}, command: {text}");
+                                    error!("Error: {e}, command: {text}");
                                 }
                             }
                         }
@@ -100,7 +100,7 @@ pub async fn run_websocket_client(
                             watchdog = Box::pin(sleep(watchdog_duration));
                         }
                         Some(Ok(Message::Close(_))) | None => {
-                            println!("Server disconnected.");
+                            warn!("Server disconnected.");
                             break; // Break the inner loop to trigger a reconnect
                         }
                         _ => {}
@@ -109,25 +109,22 @@ pub async fn run_websocket_client(
 
                 // Forward internal broadcast telemetry to the Server
                 telemetry_opt = telemetry_rx.recv() => {
-                    match telemetry_opt {
-                        Some(telemetry) => {
-                            let json = serde_json::to_string(&telemetry).unwrap();
-                            if sender.send(Message::Text(json.into())).await.is_err() {
-                                println!("Failed to send telemetry. Connection likely lost.");
-                                break; // Break the inner loop to trigger a reconnect
-                            }
+                    if let Some(telemetry) = telemetry_opt {
+                        let json = serde_json::to_string(&telemetry).unwrap();
+                        if sender.send(Message::Text(json.into())).await.is_err() {
+                            warn!("Failed to send telemetry. Connection likely lost.");
+                            break; // Break the inner loop to trigger a reconnect
                         }
-                        None => {
-                            // If the internal mpsc channel closes, the main app is shutting down
-                            println!("Internal telemetry channel closed. Shutting down client.");
-                            return;
-                        }
+                    } else {
+                        // If the internal mpsc channel closes, the main app is shutting down
+                        warn!("Internal telemetry channel closed. Shutting down client.");
+                        return;
                     }
                 }
 
                 // If the watchdog fails
                 () = &mut watchdog => {
-                    println!("No ping received from GCS in 10 seconds!");
+                    warn!("No ping received from GCS in 10 seconds!");
                     // Reset watchdog so it doesn't spam, or break here to force a TCP reconnect
                     watchdog = Box::pin(sleep(watchdog_duration));
                 }
@@ -136,5 +133,39 @@ pub async fn run_websocket_client(
 
         // Wait briefly before attempting to reconnect
         sleep(reconnect_delay).await;
+    }
+}
+
+pub async fn handle_command(command: CommandEnvelope, arbiter_tx: &mpsc::Sender<LocalCommand>) {
+    match command {
+        CommandEnvelope::Gimbal(GimbalCommands::ManualOverride { pan, tilt }) => {
+            if let Err(e) = arbiter_tx
+                .send(LocalCommand::ManualOverride { pan, tilt })
+                .await
+            {
+                error!("Failed to forward manual override to Arbiter: {e}");
+            } else {
+                debug!("Forwarded Manual Override ({pan:.1}, {tilt:.1}) to Arbiter");
+            }
+        }
+
+        CommandEnvelope::Gimbal(GimbalCommands::SetTrackingMode(enabled)) => {
+            if let Err(e) = arbiter_tx
+                .send(LocalCommand::SetTrackingMode(enabled))
+                .await
+            {
+                error!("Failed to forward tracking mode to Arbiter: {e}");
+            } else {
+                info!("Forwarded Tracking Mode toggle ({enabled}) to Arbiter");
+            }
+        }
+
+        CommandEnvelope::Gimbal(_) => {
+            warn!("Received unhandled Gimbal command");
+        }
+
+        _ => {
+            debug!("Handled non-gimbal command");
+        }
     }
 }

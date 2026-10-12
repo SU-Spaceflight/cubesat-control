@@ -1,6 +1,7 @@
 /target
 /.direnv
 *.log
-/log/*.log
+/server-log
+/log/*.log.*
 *.mp4
 /debug_frames

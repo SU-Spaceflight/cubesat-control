@@ -13,11 +13,9 @@ use opencv::{
 };
 use std::sync::{Arc, Mutex};
 use tokio::{sync::watch, task::JoinHandle, time};
+use tracing::{error, trace, warn};
 
-use crate::{
-    commands::{CommandEnvelope, FlightComputerCommands, GimbalCommands},
-    vision::RawFrame,
-};
+use crate::vision::RawFrame;
 
 pub struct MockServo {
     name: String,
@@ -50,7 +48,7 @@ impl MockServo {
         let pulse_width_ms = 1.0 + (self.current_angle / self.max_angle);
         let duty_cycle = pulse_width_ms / 20.0;
 
-        println!(
+        trace!(
             "Servo: {} (CH {}) | Angle: {:.1}° | Pulse: {:.3}ms | Duty: {:.2}%",
             self.name,
             self.channel,
@@ -64,7 +62,7 @@ impl MockServo {
 // Bounce the target around a screen like a DVD logo
 pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> JoinHandle<()> {
     let Ok(target_mat) = imgcodecs::imread(test_image_path, imgcodecs::IMREAD_COLOR) else {
-        println!("Failed to load static test image");
+        error!("Failed to load static test image");
         return tokio::spawn(async {});
     };
 
@@ -113,7 +111,7 @@ pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> 
                 opencv::core::CV_8UC3,
                 Scalar::all(255.0),
             ) else {
-                println!("Failed to allocate canvas");
+                error!("Failed to allocate canvas");
                 break;
             };
 
@@ -172,40 +170,9 @@ pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> 
             };
 
             if tx.send(frame).is_err() {
-                println!("CV Pipeline disconnected, shutting down camera feed.");
+                warn!("CV Pipeline disconnected, shutting down camera feed.");
                 break;
             }
         }
     })
-}
-
-pub fn handle_command(
-    cmd: &CommandEnvelope,
-    pan_servo: &mut MockServo,
-    tilt_servo: &mut MockServo,
-) {
-    match cmd {
-        CommandEnvelope::Flight(FlightComputerCommands::YawRight) => {
-            println!("Forwarded YawRight to Flight Computer");
-        }
-        CommandEnvelope::Gimbal(GimbalCommands::TrimPan(val)) => {
-            println!("Adjusting Gimbal Pan trim by {val} degrees");
-            pan_servo.apply_trim(*val);
-        }
-        CommandEnvelope::Gimbal(GimbalCommands::TrimTilt(val)) => {
-            println!("Adjusting Gimbal Tilt trim by {val} degrees");
-            tilt_servo.apply_trim(*val);
-        }
-        CommandEnvelope::Gimbal(GimbalCommands::SetPan(val)) => {
-            println!("Setting Gimbal Pan trim to {val} degrees");
-            pan_servo.set_absolute(*val);
-        }
-        CommandEnvelope::Gimbal(GimbalCommands::SetTilt(val)) => {
-            println!("Setting Gimbal Tilt trim to {val} degrees");
-            tilt_servo.set_absolute(*val);
-        }
-        CommandEnvelope::System(_) => {
-            println!("Forwarded System command");
-        }
-    }
 }

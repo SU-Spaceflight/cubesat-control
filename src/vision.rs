@@ -16,6 +16,7 @@ use tokio::{
     task::JoinHandle,
     time,
 };
+use tracing::{error, warn};
 
 use crate::protocol::{TargetingTele, TelemetryData, TelemetryEnvelope};
 
@@ -55,7 +56,7 @@ pub fn spawn_cv_pipeline(
 
         loop {
             if rx.changed().await.is_err() {
-                println!("Camera feed disconnected, shutting down CV pipeline.");
+                warn!("Camera feed disconnected, shutting down CV pipeline.");
                 break;
             }
 
@@ -63,6 +64,7 @@ pub fn spawn_cv_pipeline(
             frame_counter += 1;
 
             let compute_frame = frame_wrapper.clone();
+            let start_cv = Instant::now();
 
             let (raw_target_point, raw_laser_point) = tokio::task::spawn_blocking(move || {
                 let Ok(mat) = compute_frame.image.lock() else {
@@ -183,7 +185,13 @@ pub fn spawn_cv_pipeline(
             .await
             .unwrap_or((None, None));
 
-            let filtered_point = match (raw_target_point, last_target) {
+            let duration = start_cv.elapsed();
+            tracing::trace!("CV Frame processed in {:?}", duration);
+            if duration > Duration::from_millis(50) {
+                tracing::warn!("CV processing lagging: took {:?}", duration);
+            }
+
+            let filtered_target_point = match (raw_target_point, last_target) {
                 (Some(new_pt), Some(last_pt)) => {
                     let dist = (new_pt.x - last_pt.x).hypot(new_pt.y - last_pt.y);
 
@@ -200,12 +208,12 @@ pub fn spawn_cv_pipeline(
                 (None, _) => None,
             };
 
-            last_target = filtered_point;
+            last_target = filtered_target_point;
 
             if cfg!(feature = "save_debug_frames")
                 && let Ok(mut mat) = frame_wrapper.image.lock()
             {
-                if let Some(pt) = filtered_point {
+                if let Some(pt) = filtered_target_point {
                     let _ = imgproc::circle(
                         &mut *mat,
                         opencv::core::Point2i::new(pt.x as i32, pt.y as i32),
@@ -218,11 +226,15 @@ pub fn spawn_cv_pipeline(
                 }
 
                 let filename = format!("debug_frames/frame_{frame_counter:05}.jpg");
-                let _ = opencv::imgcodecs::imwrite(&filename, &*mat, &opencv::core::Vector::new());
+                if let Err(e) =
+                    opencv::imgcodecs::imwrite(&filename, &*mat, &opencv::core::Vector::new())
+                {
+                    tracing::error!("Failed to save debug frame {filename}: {e}");
+                }
             }
 
             let output = CvOutput {
-                target: raw_target_point,
+                target: filtered_target_point,
                 laser: raw_laser_point,
             };
 
@@ -252,7 +264,7 @@ pub fn spawn_targeting_telemetry_watcher(
             };
 
             if tx.send(msg).await.is_err() {
-                println!("Failed to send watch telemetry");
+                error!("Failed to send watch telemetry");
                 break;
             }
         }
