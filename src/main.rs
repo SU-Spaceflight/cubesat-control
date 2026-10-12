@@ -283,7 +283,7 @@ async fn main() {
                                     },
                                     CommandEnvelope::Gimbal(GimbalCommands::SetTilt(val)) => {
                                         println!("Setting Gimbal Tilt trim to {val} degrees");
-                                        pan_servo.set_absolute(val);
+                                        tilt_servo.set_absolute(val);
                                     },
                                 }
                             }
