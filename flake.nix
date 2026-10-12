@@ -39,6 +39,7 @@
           nativeBuildInputs = [
             pkgs.pkg-config
             pkgs.clang
+            pkgs.mold
           ];
 
           packages = with pkgs; [
