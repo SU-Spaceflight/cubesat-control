@@ -11,9 +11,10 @@ use crate::hardware::{MockServo, spawn_camera_feed};
 use crate::protocol::{TelemetryEnvelope, run_websocket_client};
 use crate::sensors::spawn_temperature_monitor;
 use crate::vision::{
-    CvOutput, RawFrame, spawn_cv_pipeline, spawn_targeting_computer,
+    CvOutput, RawFrame, spawn_cv_pipeline,
     spawn_targeting_telemetry_watcher,
 };
+use crate::control::spawn_targeting_computer;
 
 mod commands;
 mod control;

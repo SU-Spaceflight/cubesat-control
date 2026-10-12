@@ -231,18 +231,6 @@ pub fn spawn_cv_pipeline(
     })
 }
 
-pub fn spawn_targeting_computer(mut rx: watch::Receiver<CvOutput>) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        loop {
-            println!("{:?}", *rx.borrow_and_update());
-            if rx.changed().await.is_err() {
-                println!("Error in targeting computer input channel");
-                break;
-            }
-        }
-    })
-}
-
 pub fn spawn_targeting_telemetry_watcher(
     rx: watch::Receiver<CvOutput>,
     tx: mpsc::Sender<TelemetryEnvelope>,

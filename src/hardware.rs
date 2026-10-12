@@ -82,10 +82,12 @@ pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> 
         let mut dx = 8;
         let mut dy = 8;
         let mut tick_counter: f64 = 0.0;
+        let mut frame_count: u64 = 0;
 
         loop {
             interval.tick().await;
             tick_counter += 0.05;
+            frame_count += 1;
 
             let scale_x = 0.5f64.mul_add(tick_counter.sin().abs(), 0.5);
             let scale_y = 0.5f64.mul_add(tick_counter.cos().abs(), 0.5);
@@ -130,21 +132,40 @@ pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> 
                 let _ = squashed_mat.copy_to(&mut canvas_roi);
             }
 
-            // Move a simulate laser point around in a circle on the canvas
-            let laser_x =
-                150.0f64.mul_add((tick_counter * 0.8).cos(), f64::from(canvas_width) / 2.0) as i32;
-            let laser_y =
-                150.0f64.mul_add((tick_counter * 0.8).sin(), f64::from(canvas_height) / 2.0) as i32;
+            // Move a simulated laser point around in a circle on the canvas
+            let cycle = frame_count % 300;
+            #[allow(clippy::match_same_arms)]
+            let laser_visible = match cycle {
+                50 | 51 => false,           // 2 frame drop
+                80 => false,                // 1 frame drop
+                110..=140 => cycle % 4 < 2, // 2 frames on, 2 frames off
+                180..=220 => false,         // 40-frame drop
+                _ => true,                  // Normal visibility
+            };
 
-            let _ = imgproc::circle(
-                &mut canvas,
-                opencv::core::Point2i::new(laser_x, laser_y),
-                4,
-                opencv::core::Scalar::new(0.0, 0.0, 255.0, 0.0),
-                -1,
-                imgproc::LINE_8,
-                0,
-            );
+            if laser_visible {
+                let laser_x = 150.0f64
+                    .mul_add((tick_counter * 0.8).cos(), f64::from(canvas_width) / 2.0)
+                    as i32;
+                let laser_y = 150.0f64
+                    .mul_add((tick_counter * 0.8).sin(), f64::from(canvas_height) / 2.0)
+                    as i32;
+
+                let _ = imgproc::circle(
+                    &mut canvas,
+                    opencv::core::Point2i::new(laser_x, laser_y),
+                    4,
+                    opencv::core::Scalar::new(0.0, 0.0, 255.0, 0.0),
+                    -1,
+                    imgproc::LINE_8,
+                    0,
+                );
+            }
+
+            let roi = Rect::new(x, y, current_w, current_h);
+            if let Ok(mut canvas_roi) = canvas.roi_mut(roi) {
+                let _ = squashed_mat.copy_to(&mut canvas_roi);
+            }
 
             let frame = RawFrame {
                 image: Arc::new(Mutex::new(canvas)),
