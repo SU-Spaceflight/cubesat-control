@@ -1,7 +1,7 @@
+use std::fs;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use std::fs;
 
 use opencv::{core::Mat, imgproc, prelude::*};
 use serde::{Deserialize, Serialize};
@@ -42,6 +42,10 @@ pub fn spawn_cv_pipeline(
     tokio::spawn(async move {
         let mut frame_counter = 0;
 
+        let mut last_target: Option<Point> = None;
+        let alpha = 0.8; // Smoothing factor
+        let jump_threshold = 100.0;
+
         loop {
             if rx.changed().await.is_err() {
                 println!("Camera feed disconnected, shutting down CV pipeline.");
@@ -50,10 +54,11 @@ pub fn spawn_cv_pipeline(
 
             let frame_wrapper = rx.borrow().clone();
             frame_counter += 1;
-            let current_frame = frame_counter;
 
-            let target_point = tokio::task::spawn_blocking(move || {
-                let mut mat = frame_wrapper.image.lock().unwrap();
+            let compute_frame = frame_wrapper.clone();
+
+            let raw_target_point = tokio::task::spawn_blocking(move || {
+                let mat = compute_frame.image.lock().unwrap();
                 if mat.empty() {
                     return None;
                 }
@@ -61,10 +66,17 @@ pub fn spawn_cv_pipeline(
                 let mut gray = opencv::core::Mat::default();
                 let mut edges = opencv::core::Mat::default();
 
-                let _ = imgproc::cvt_color(&*mat, &mut gray, imgproc::COLOR_BGR2GRAY, 0, opencv::core::AlgorithmHint::ALGO_HINT_DEFAULT);
+                let _ = imgproc::cvt_color(
+                    &*mat,
+                    &mut gray,
+                    imgproc::COLOR_BGR2GRAY,
+                    0,
+                    opencv::core::AlgorithmHint::ALGO_HINT_DEFAULT,
+                );
                 let _ = imgproc::canny(&gray, &mut edges, 50.0, 150.0, 3, false);
 
-                let mut contours = opencv::core::Vector::<opencv::core::Vector<opencv::core::Point2i>>::new();
+                let mut contours =
+                    opencv::core::Vector::<opencv::core::Vector<opencv::core::Point2i>>::new();
                 let _ = imgproc::find_contours(
                     &edges,
                     &mut contours,
@@ -78,7 +90,9 @@ pub fn spawn_cv_pipeline(
                     if let Ok(contour) = contours.get(i) {
                         if contour.len() >= 5 {
                             if let Ok(ellipse) = imgproc::fit_ellipse(&contour) {
-                                let area = ellipse.size.width * ellipse.size.height * std::f32::consts::PI / 4.0;
+                                let area =
+                                    ellipse.size.width * ellipse.size.height * std::f32::consts::PI
+                                        / 4.0;
                                 if (100.0..100_000.0).contains(&area) {
                                     valid_ellipses.push((ellipse, area));
                                 }
@@ -107,10 +121,40 @@ pub fn spawn_cv_pipeline(
                             break;
                         }
                     }
-                    if found_point.is_some() { break; }
+                    if found_point.is_some() {
+                        break;
+                    }
                 }
 
-                if let Some(pt) = found_point {
+                found_point
+            })
+            .await
+            .unwrap_or(None);
+
+            let filtered_point = match (raw_target_point, last_target) {
+                (Some(new_pt), Some(last_pt)) => {
+                    let dist =
+                        ((new_pt.x - last_pt.x).powi(2) + (new_pt.y - last_pt.y).powi(2)).sqrt();
+
+                    if dist > jump_threshold {
+                        Some(new_pt)
+                    } else {
+                        Some(Point {
+                            x: last_pt.x + alpha * (new_pt.x - last_pt.x),
+                            y: last_pt.y + alpha * (new_pt.y - last_pt.y),
+                        })
+                    }
+                }
+                (Some(new_pt), None) => Some(new_pt),
+                (None, _) => None,
+            };
+
+            last_target = filtered_point;
+
+            if cfg!(feature = "save_debug_frames") {
+                let mut mat = frame_wrapper.image.lock().unwrap();
+
+                if let Some(pt) = filtered_point {
                     let _ = imgproc::circle(
                         &mut *mat,
                         opencv::core::Point2i::new(pt.x as i32, pt.y as i32),
@@ -122,22 +166,12 @@ pub fn spawn_cv_pipeline(
                     );
                 }
 
-                if cfg!(feature = "save_debug_frames") {
-                    let filename = format!("debug_frames/frame_{:05}.jpg", current_frame);
-                    let _ = opencv::imgcodecs::imwrite(
-                        &filename,
-                        &*mat,
-                        &opencv::core::Vector::new()
-                    );
-                }
-
-                found_point
-            })
-            .await
-            .unwrap_or(None);
+                let filename = format!("debug_frames/frame_{:05}.jpg", frame_counter);
+                let _ = opencv::imgcodecs::imwrite(&filename, &*mat, &opencv::core::Vector::new());
+            }
 
             let output = CvOutput {
-                target: target_point,
+                target: raw_target_point,
                 laser: None,
             };
 

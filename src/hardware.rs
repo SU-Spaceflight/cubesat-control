@@ -2,8 +2,7 @@ use std::time::Duration;
 
 use opencv::{
     core::{Mat, Rect, Scalar, Size},
-    imgcodecs,
-    imgproc,
+    imgcodecs, imgproc,
     prelude::*,
 };
 use std::sync::{Arc, Mutex};
@@ -102,15 +101,18 @@ pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> 
                 canvas_height,
                 canvas_width,
                 opencv::core::CV_8UC3,
-                Scalar::all(255.0)
-            ).unwrap();
+                Scalar::all(255.0),
+            )
+            .unwrap();
 
             let mut squashed_mat = Mat::default();
             let _ = imgproc::resize(
                 &target_mat,
                 &mut squashed_mat,
                 Size::new(current_w, current_h),
-                0.0, 0.0, imgproc::INTER_LINEAR
+                0.0,
+                0.0,
+                imgproc::INTER_LINEAR,
             );
 
             // 5. Apply the squashed image to the ROI
