@@ -5,7 +5,11 @@ use serde::{Deserialize, Serialize};
 use tokio::{sync::mpsc, time::sleep};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
-use crate::{commands::CommandEnvelope, hardware::{MockServo, handle_command}, vision::Point};
+use crate::{
+    commands::CommandEnvelope,
+    hardware::{MockServo, handle_command},
+    vision::Point,
+};
 
 #[derive(Serialize, Deserialize, Debug, Clone)] // Telemetry to send
 pub struct TelemetryEnvelope {
@@ -49,7 +53,12 @@ pub struct CameraData {
     pub laser: Option<Point>,
 }
 
-pub async fn run_websocket_client(connect_addr: &str, mut telemetry_rx: mpsc::Receiver<TelemetryEnvelope>, mut pan_servo: MockServo, mut tilt_servo: MockServo) {
+pub async fn run_websocket_client(
+    connect_addr: &str,
+    mut telemetry_rx: mpsc::Receiver<TelemetryEnvelope>,
+    mut pan_servo: MockServo,
+    mut tilt_servo: MockServo,
+) {
     println!("connecting to server at {connect_addr}");
 
     let (ws_stream, _) = connect_async(connect_addr).await.unwrap();

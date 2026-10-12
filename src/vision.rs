@@ -50,10 +50,7 @@ pub fn spawn_cv_pipeline(
                 }
 
                 let mut gray = Mat::default();
-                let mut thresh = Mat::default();
-                let mut contours =
-                    opencv::core::Vector::<opencv::core::Vector<opencv::core::Point2i>>::new();
-                let mut hierarchy = opencv::core::Vector::<opencv::core::Vec4i>::new();
+                let mut edges = Mat::default();
 
                 let _ = imgproc::cvt_color(
                     &*mat,
@@ -61,62 +58,55 @@ pub fn spawn_cv_pipeline(
                     imgproc::COLOR_BGR2GRAY,
                     0,
                     opencv::core::AlgorithmHint::ALGO_HINT_DEFAULT,
-                ); // Convert to grayscale and apply threshold
-                let _ =
-                    imgproc::threshold(&gray, &mut thresh, 127.0, 255.0, imgproc::THRESH_BINARY);
+                );
+                let _ = imgproc::canny(&gray, &mut edges, 50.0, 150.0, 3, false);
 
-                // map nested relationships
-                let _ = imgproc::find_contours_with_hierarchy(
-                    &thresh,
+                let mut contours =
+                    opencv::core::Vector::<opencv::core::Vector<opencv::core::Point2i>>::new();
+                let _ = imgproc::find_contours(
+                    &edges,
                     &mut contours,
-                    &mut hierarchy,
-                    imgproc::RETR_TREE,
+                    imgproc::RETR_LIST,
                     imgproc::CHAIN_APPROX_SIMPLE,
                     opencv::core::Point2i::new(0, 0),
                 );
 
-                for i in 0..hierarchy.len() {
-                    let Ok(h) = hierarchy.get(i) else { continue };
-                    let child_idx = h[2];
-
-                    if child_idx != -1 {
-                        let Ok(child_h) = hierarchy.get(child_idx as usize) else {
-                            continue;
-                        };
-
-                        // Check if the contour has one child with no siblings
-                        if child_h[0] == -1 && child_h[1] == -1 {
-                            let grandchild_idx = child_h[2];
-
-                            if grandchild_idx != -1 {
-                                let Ok(grandchild_h) = hierarchy.get(grandchild_idx as usize)
-                                else {
-                                    continue;
-                                };
-
-                                // check if the child has one child with no siblings
-                                if grandchild_h[0] == -1 && grandchild_h[1] == -1 {
-                                    // Innermost contour found, find the middle
-                                    if let Ok(innermost_contour) =
-                                        contours.get(grandchild_idx as usize)
-                                    {
-                                        // Fit ellipse requires at least three points
-                                        if innermost_contour.len() >= 5 {
-                                            if let Ok(ellipse) =
-                                                imgproc::fit_ellipse(&innermost_contour)
-                                            {
-                                                return Some(Point {
-                                                    x: ellipse.center.x,
-                                                    y: ellipse.center.y,
-                                                });
-                                            }
-                                        }
-                                    }
+                let mut valid_ellipses = Vec::new();
+                for i in 0..contours.len() {
+                    if let Ok(contour) = contours.get(i) {
+                        if contour.len() >= 5 {
+                            if let Ok(ellipse) = imgproc::fit_ellipse(&contour) {
+                                let area =
+                                    ellipse.size.width * ellipse.size.height * std::f32::consts::PI
+                                        / 4.0;
+                                if (100.0..100_000.0).contains(&area) {
+                                    valid_ellipses.push((ellipse, area));
                                 }
                             }
                         }
                     }
                 }
+
+                let center_tolerance = 5.0;
+
+                for i in 0..valid_ellipses.len() {
+                    for j in (i + 1)..valid_ellipses.len() {
+                        let (e1, area1) = valid_ellipses[i];
+                        let (e2, area2) = valid_ellipses[j];
+
+                        let dx = e1.center.x - e2.center.x;
+                        let dy = e1.center.y - e2.center.y;
+                        let distance = (dx.powi(2) + dy.powi(2)).sqrt();
+
+                        if distance < center_tolerance && (area1 - area2).abs() > 500.0 {
+                            return Some(Point {
+                                x: (e1.center.x + e2.center.x) / 2.0,
+                                y: (e1.center.y + e2.center.y) / 2.0,
+                            });
+                        }
+                    }
+                }
+
                 None
             })
             .await

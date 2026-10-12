@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use opencv::imgcodecs;
-use tokio::{sync::watch, task::JoinHandle, time};
 use std::sync::{Arc, Mutex};
+use tokio::{sync::watch, task::JoinHandle, time};
 
 use crate::{
     commands::{CommandEnvelope, FlightComputerCommands, GimbalCommands},

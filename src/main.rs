@@ -1,16 +1,14 @@
 #![allow(clippy::unwrap_used)] // Just for preliminary testing
 #![allow(clippy::expect_used)]
 
-use std::time::Instant;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
+use opencv::core::Mat;
 use tokio::sync;
-use opencv::{
-    core::Mat,
-};
 
 use crate::hardware::{MockServo, spawn_camera_feed};
-use crate::protocol::{ TelemetryEnvelope, run_websocket_client};
+use crate::protocol::{TelemetryEnvelope, run_websocket_client};
 use crate::sensors::spawn_temperature_monitor;
 use crate::vision::{
     CvOutput, RawFrame, spawn_cv_pipeline, spawn_targeting_computer,
