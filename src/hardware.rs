@@ -1,12 +1,12 @@
 use std::time::Duration;
 
-use rand::{RngExt, rand_core::UnwrapErr, rngs::SysRng};
+use opencv::imgcodecs;
 use tokio::{sync::watch, task::JoinHandle, time};
+use std::sync::{Arc, Mutex};
 
 use crate::{
     commands::{CommandEnvelope, FlightComputerCommands, GimbalCommands},
-    protocol::CameraData,
-    vision::Point,
+    vision::RawFrame,
 };
 
 pub struct MockServo {
@@ -51,34 +51,26 @@ impl MockServo {
     }
 }
 
-pub fn spawn_camera_feed(tx: watch::Sender<CameraData>) -> JoinHandle<()> {
+pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> JoinHandle<()> {
+    let mat = imgcodecs::imread(test_image_path, imgcodecs::IMREAD_COLOR)
+        .expect("Failed to load static test image");
+
+    let shared_frame = Arc::new(Mutex::new(mat));
+
     tokio::spawn(async move {
         let mut interval = time::interval(Duration::from_millis(33));
 
         loop {
             interval.tick().await;
 
-            let target = if UnwrapErr(SysRng).random() {
-                Some(Point {
-                    x: UnwrapErr(SysRng).random(),
-                    y: UnwrapErr(SysRng).random(),
-                })
-            } else {
-                None
+            let frame = RawFrame {
+                image: Arc::clone(&shared_frame),
             };
 
-            let laser = if UnwrapErr(SysRng).random() {
-                Some(Point {
-                    x: UnwrapErr(SysRng).random(),
-                    y: UnwrapErr(SysRng).random(),
-                })
-            } else {
-                None
-            };
-
-            let frame = CameraData { target, laser };
-
-            let _ = tx.send(frame);
+            if tx.send(frame).is_err() {
+                println!("CV Pipeline disconnected, shutting down camera feed.");
+                break;
+            }
         }
     })
 }
