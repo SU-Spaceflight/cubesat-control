@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 futures-util = "0.3.34"
+opencv = "0.101.1"
 rand = { version = "0.10.3", features = ["chacha"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"

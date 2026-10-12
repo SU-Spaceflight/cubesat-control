@@ -33,10 +33,12 @@
           buildInputs = [
             rustToolchain
             pkgs.python3
+            pkgs.opencv
           ];
 
           nativeBuildInputs = [
             pkgs.pkg-config
+            pkgs.clang
           ];
 
           packages = with pkgs; [
@@ -60,9 +62,11 @@
               echo "No requirements.txt found. Skipping pip install."
             fi
           '';
+          LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+
+          BINDGEN_EXTRA_CLANG_ARGS = "-isystem ${pkgs.llvmPackages.libclang.lib}/lib/clang/${pkgs.libclang.version}/include";
 
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "${crossPkgs.stdenv.cc}/bin/${crossPkgs.stdenv.cc.targetPrefix}cc";
-
           PKG_CONFIG_ALLOW_CROSS = "1";
         };
       }
