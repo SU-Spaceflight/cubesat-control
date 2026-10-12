@@ -1,3 +1,9 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::as_conversions,
+    clippy::cast_possible_wrap,
+    clippy::arithmetic_side_effects
+)]
 use std::time::Duration;
 
 use opencv::{
@@ -57,8 +63,10 @@ impl MockServo {
 
 // Bounce the target around a screen like a DVD logo
 pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> JoinHandle<()> {
-    let target_mat = imgcodecs::imread(test_image_path, imgcodecs::IMREAD_COLOR)
-        .expect("Failed to load static test image");
+    let Ok(target_mat) = imgcodecs::imread(test_image_path, imgcodecs::IMREAD_COLOR) else {
+        println!("Failed to load static test image");
+        return tokio::spawn(async {});
+    };
 
     let base_width = f64::from(target_mat.cols());
     let base_height = f64::from(target_mat.rows());
@@ -97,13 +105,15 @@ pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> 
                 y = y.clamp(0, canvas_height - current_h);
             }
 
-            let mut canvas = Mat::new_rows_cols_with_default(
+            let Ok(mut canvas) = Mat::new_rows_cols_with_default(
                 canvas_height,
                 canvas_width,
                 opencv::core::CV_8UC3,
                 Scalar::all(255.0),
-            )
-            .unwrap();
+            ) else {
+                println!("Failed to allocate canvas");
+                break;
+            };
 
             let mut squashed_mat = Mat::default();
             let _ = imgproc::resize(
@@ -121,8 +131,10 @@ pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> 
             }
 
             // Move a simulate laser point around in a circle on the canvas
-            let laser_x = 150.0f64.mul_add((tick_counter * 0.8).cos(), f64::from(canvas_width) / 2.0) as i32;
-            let laser_y = 150.0f64.mul_add((tick_counter * 0.8).sin(), f64::from(canvas_height) / 2.0) as i32;
+            let laser_x =
+                150.0f64.mul_add((tick_counter * 0.8).cos(), f64::from(canvas_width) / 2.0) as i32;
+            let laser_y =
+                150.0f64.mul_add((tick_counter * 0.8).sin(), f64::from(canvas_height) / 2.0) as i32;
 
             let _ = imgproc::circle(
                 &mut canvas,

@@ -1,5 +1,5 @@
-#![allow(clippy::unwrap_used)] // Just for preliminary testing
-#![allow(clippy::expect_used)]
+// #![allow(clippy::unwrap_used)] // Just for preliminary testing
+// #![allow(clippy::expect_used)]
 
 use std::sync::{Arc, Mutex};
 use std::time::Instant;

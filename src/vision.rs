@@ -1,3 +1,9 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::as_conversions,
+    clippy::cast_possible_wrap,
+    clippy::arithmetic_side_effects
+)]
 use std::fs;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -31,6 +37,7 @@ pub struct RawFrame {
     pub image: Arc<Mutex<Mat>>,
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn spawn_cv_pipeline(
     mut rx: watch::Receiver<RawFrame>,
     tx: watch::Sender<CvOutput>,
@@ -58,7 +65,9 @@ pub fn spawn_cv_pipeline(
             let compute_frame = frame_wrapper.clone();
 
             let (raw_target_point, raw_laser_point) = tokio::task::spawn_blocking(move || {
-                let mat = compute_frame.image.lock().unwrap();
+                let Ok(mat) = compute_frame.image.lock() else {
+                    return (None, None);
+                };
                 if mat.empty() {
                     return (None, None);
                 }
@@ -89,14 +98,14 @@ pub fn spawn_cv_pipeline(
                 for i in 0..contours.len() {
                     if let Ok(contour) = contours.get(i)
                         && contour.len() >= 5
-                            && let Ok(ellipse) = imgproc::fit_ellipse(&contour) {
-                                let area =
-                                    ellipse.size.width * ellipse.size.height * std::f32::consts::PI
-                                        / 4.0;
-                                if (100.0..100_000.0).contains(&area) {
-                                    valid_ellipses.push((ellipse, area));
-                                }
-                            }
+                        && let Ok(ellipse) = imgproc::fit_ellipse(&contour)
+                    {
+                        let area =
+                            ellipse.size.width * ellipse.size.height * std::f32::consts::PI / 4.0;
+                        if (100.0..100_000.0).contains(&area) {
+                            valid_ellipses.push((ellipse, area));
+                        }
+                    }
                 }
 
                 let center_tolerance = 5.0;
@@ -104,8 +113,12 @@ pub fn spawn_cv_pipeline(
 
                 for i in 0..valid_ellipses.len() {
                     for j in (i + 1)..valid_ellipses.len() {
-                        let (e1, area1) = valid_ellipses[i];
-                        let (e2, area2) = valid_ellipses[j];
+                        let Some(&(e1, area1)) = valid_ellipses.get(i) else {
+                            continue;
+                        };
+                        let Some(&(e2, area2)) = valid_ellipses.get(j) else {
+                            continue;
+                        };
 
                         let dx = e1.center.x - e2.center.x;
                         let dy = e1.center.y - e2.center.y;
@@ -152,15 +165,16 @@ pub fn spawn_cv_pipeline(
                     &opencv::core::no_array(),
                 );
 
-                let mut laser_point = None;
-                if let Ok(moments) = imgproc::moments(&laser_mask, true)
-                    && moments.m00 > 0.0 {
-                        // Prevent division by zero
-                        laser_point = Some(Point {
-                            x: (moments.m10 / moments.m00) as f32,
-                            y: (moments.m01 / moments.m00) as f32,
-                        });
-                    }
+                let laser_point = imgproc::moments(&laser_mask, true).map_or(None, |moments| if moments.m00 > 0.0 {
+                    Some(Point {
+                        x: (moments.m10 / moments.m00) as f32,
+                        y: (moments.m01 / moments.m00) as f32,
+                    })
+                } else {
+                    None
+                });
+
+                drop(mat);
 
                 (found_point, laser_point)
             })
@@ -169,8 +183,7 @@ pub fn spawn_cv_pipeline(
 
             let filtered_point = match (raw_target_point, last_target) {
                 (Some(new_pt), Some(last_pt)) => {
-                    let dist =
-                        (new_pt.x - last_pt.x).hypot(new_pt.y - last_pt.y);
+                    let dist = (new_pt.x - last_pt.x).hypot(new_pt.y - last_pt.y);
 
                     if dist > jump_threshold {
                         Some(new_pt)
@@ -187,24 +200,24 @@ pub fn spawn_cv_pipeline(
 
             last_target = filtered_point;
 
-            if cfg!(feature = "save_debug_frames") {
-                let mut mat = frame_wrapper.image.lock().unwrap();
+            if cfg!(feature = "save_debug_frames")
+                && let Ok(mut mat) = frame_wrapper.image.lock() {
+                    if let Some(pt) = filtered_point {
+                        let _ = imgproc::circle(
+                            &mut *mat,
+                            opencv::core::Point2i::new(pt.x as i32, pt.y as i32),
+                            5,
+                            opencv::core::Scalar::new(0.0, 255.0, 0.0, 0.0),
+                            -1,
+                            imgproc::LINE_8,
+                            0,
+                        );
+                    }
 
-                if let Some(pt) = filtered_point {
-                    let _ = imgproc::circle(
-                        &mut *mat,
-                        opencv::core::Point2i::new(pt.x as i32, pt.y as i32),
-                        5,
-                        opencv::core::Scalar::new(0.0, 255.0, 0.0, 0.0),
-                        -1,
-                        imgproc::LINE_8,
-                        0,
-                    );
+                    let filename = format!("debug_frames/frame_{frame_counter:05}.jpg");
+                    let _ =
+                        opencv::imgcodecs::imwrite(&filename, &*mat, &opencv::core::Vector::new());
                 }
-
-                let filename = format!("debug_frames/frame_{frame_counter:05}.jpg");
-                let _ = opencv::imgcodecs::imwrite(&filename, &*mat, &opencv::core::Vector::new());
-            }
 
             let output = CvOutput {
                 target: raw_target_point,

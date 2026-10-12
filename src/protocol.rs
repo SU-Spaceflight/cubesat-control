@@ -1,3 +1,6 @@
+#![allow(clippy::unwrap_used)] // Just for preliminary testing
+#![allow(clippy::expect_used)]
+
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
@@ -59,58 +62,79 @@ pub async fn run_websocket_client(
     mut pan_servo: MockServo,
     mut tilt_servo: MockServo,
 ) {
-    println!("connecting to server at {connect_addr}");
-
-    let (ws_stream, _) = connect_async(connect_addr).await.unwrap();
-
-    println!("connected");
-
-    let (mut sender, mut receiver) = ws_stream.split();
-
+    let reconnect_delay = Duration::from_secs(3);
     let watchdog_duration = Duration::from_secs(10);
-    let mut watchdog = Box::pin(sleep(watchdog_duration));
 
-    // Handle recieving commands and pings, as well as sending telemetry.
     loop {
-        tokio::select! {
-            msg = receiver.next() => {
-                match msg {
-                    Some(Ok(Message::Text(text))) => {
-                        match serde_json::from_str::<CommandEnvelope>(&text) {
-                            Ok(cmd) => {
-                                handle_command(&cmd, &mut pan_servo, &mut tilt_servo);
-                            }
-                            Err(e) => {
-                                println!("Error: {e}, command: {text}");
+        println!("Attempting to connect to GCS server at {connect_addr}");
+
+        // Attempt to connect
+        let ws_stream = match connect_async(connect_addr).await {
+            Ok((stream, _)) => stream,
+            Err(e) => {
+                println!("Connection failed: {e}. Retrying in {reconnect_delay:?}");
+                sleep(reconnect_delay).await;
+                continue;
+            }
+        };
+
+        println!("Connected to GCS!");
+        let (mut sender, mut receiver) = ws_stream.split();
+        let mut watchdog = Box::pin(sleep(watchdog_duration));
+
+        loop {
+            tokio::select! {
+                msg = receiver.next() => {
+                    match msg {
+                        Some(Ok(Message::Text(text))) => {
+                            match serde_json::from_str::<CommandEnvelope>(&text) {
+                                Ok(cmd) => {
+                                    handle_command(&cmd, &mut pan_servo, &mut tilt_servo);
+                                }
+                                Err(e) => {
+                                    println!("Error: {e}, command: {text}");
+                                }
                             }
                         }
+                        Some(Ok(Message::Ping(_))) => {
+                            watchdog = Box::pin(sleep(watchdog_duration));
+                        }
+                        Some(Ok(Message::Close(_))) | None => {
+                            println!("Server disconnected.");
+                            break; // Break the inner loop to trigger a reconnect
+                        }
+                        _ => {}
                     }
-                    Some(Ok(Message::Ping(_))) => {
-                        watchdog = Box::pin(sleep(watchdog_duration));
-                    }
-                    Some(Ok(Message::Close(_))) | None => {
-                        println!("Server disconnected");
-                        break;
-                    }
-                    _ => {}
                 }
-            }
 
-            // Forward internal broadcast telemetry to the Server
-            Some(telemetry) = telemetry_rx.recv() => {
-                let json = serde_json::to_string(&telemetry).unwrap();
-                if sender.send(Message::Text(json.into())).await.is_err() {
-                    println!("Failed to send telemetry");
-                    break;
+                // Forward internal broadcast telemetry to the Server
+                telemetry_opt = telemetry_rx.recv() => {
+                    match telemetry_opt {
+                        Some(telemetry) => {
+                            let json = serde_json::to_string(&telemetry).unwrap();
+                            if sender.send(Message::Text(json.into())).await.is_err() {
+                                println!("Failed to send telemetry. Connection likely lost.");
+                                break; // Break the inner loop to trigger a reconnect
+                            }
+                        }
+                        None => {
+                            // If the internal mpsc channel closes, the main app is shutting down
+                            println!("Internal telemetry channel closed. Shutting down client.");
+                            return;
+                        }
+                    }
                 }
-            }
 
-            // If the watchdog fails
-            () = &mut watchdog => {
-                println!("No ping received from GCS in 10 seconds!");
-
-                watchdog = Box::pin(sleep(watchdog_duration));
+                // If the watchdog fails
+                () = &mut watchdog => {
+                    println!("No ping received from GCS in 10 seconds!");
+                    // Reset watchdog so it doesn't spam, or break here to force a TCP reconnect
+                    watchdog = Box::pin(sleep(watchdog_duration));
+                }
             }
         }
+
+        // Wait briefly before attempting to reconnect
+        sleep(reconnect_delay).await;
     }
 }
