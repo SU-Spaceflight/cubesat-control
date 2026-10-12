@@ -165,13 +165,15 @@ pub fn spawn_cv_pipeline(
                     &opencv::core::no_array(),
                 );
 
-                let laser_point = imgproc::moments(&laser_mask, true).map_or(None, |moments| if moments.m00 > 0.0 {
-                    Some(Point {
-                        x: (moments.m10 / moments.m00) as f32,
-                        y: (moments.m01 / moments.m00) as f32,
-                    })
-                } else {
-                    None
+                let laser_point = imgproc::moments(&laser_mask, true).map_or(None, |moments| {
+                    if moments.m00 > 0.0 {
+                        Some(Point {
+                            x: (moments.m10 / moments.m00) as f32,
+                            y: (moments.m01 / moments.m00) as f32,
+                        })
+                    } else {
+                        None
+                    }
                 });
 
                 drop(mat);
@@ -201,23 +203,23 @@ pub fn spawn_cv_pipeline(
             last_target = filtered_point;
 
             if cfg!(feature = "save_debug_frames")
-                && let Ok(mut mat) = frame_wrapper.image.lock() {
-                    if let Some(pt) = filtered_point {
-                        let _ = imgproc::circle(
-                            &mut *mat,
-                            opencv::core::Point2i::new(pt.x as i32, pt.y as i32),
-                            5,
-                            opencv::core::Scalar::new(0.0, 255.0, 0.0, 0.0),
-                            -1,
-                            imgproc::LINE_8,
-                            0,
-                        );
-                    }
-
-                    let filename = format!("debug_frames/frame_{frame_counter:05}.jpg");
-                    let _ =
-                        opencv::imgcodecs::imwrite(&filename, &*mat, &opencv::core::Vector::new());
+                && let Ok(mut mat) = frame_wrapper.image.lock()
+            {
+                if let Some(pt) = filtered_point {
+                    let _ = imgproc::circle(
+                        &mut *mat,
+                        opencv::core::Point2i::new(pt.x as i32, pt.y as i32),
+                        5,
+                        opencv::core::Scalar::new(0.0, 255.0, 0.0, 0.0),
+                        -1,
+                        imgproc::LINE_8,
+                        0,
+                    );
                 }
+
+                let filename = format!("debug_frames/frame_{frame_counter:05}.jpg");
+                let _ = opencv::imgcodecs::imwrite(&filename, &*mat, &opencv::core::Vector::new());
+            }
 
             let output = CvOutput {
                 target: raw_target_point,
