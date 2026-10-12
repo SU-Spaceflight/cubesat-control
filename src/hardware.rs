@@ -1,6 +1,10 @@
 use std::time::Duration;
 
-use opencv::imgcodecs;
+use opencv::{
+    core::{Mat, Rect, Scalar},
+    imgcodecs,
+    prelude::*,
+};
 use std::sync::{Arc, Mutex};
 use tokio::{sync::watch, task::JoinHandle, time};
 
@@ -51,20 +55,54 @@ impl MockServo {
     }
 }
 
+// Bounce the target around a screen like a DVD logo
 pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> JoinHandle<()> {
-    let mat = imgcodecs::imread(test_image_path, imgcodecs::IMREAD_COLOR)
+    let target_mat = imgcodecs::imread(test_image_path, imgcodecs::IMREAD_COLOR)
         .expect("Failed to load static test image");
 
-    let shared_frame = Arc::new(Mutex::new(mat));
+    let target_width = target_mat.cols();
+    let target_height = target_mat.rows();
+
+    let canvas_width = 1280;
+    let canvas_height = 720;
 
     tokio::spawn(async move {
         let mut interval = time::interval(Duration::from_millis(33));
 
+        let mut x = 0;
+        let mut y = 0;
+        let mut dx = 8;
+        let mut dy = 8;
+
         loop {
             interval.tick().await;
 
+            x += dx;
+            y += dy;
+
+            if x <= 0 || x + target_width >= canvas_width {
+                dx = -dx;
+                x = x.clamp(0, canvas_width - target_width);
+            }
+            if y <= 0 || y + target_height >= canvas_height {
+                dy = -dy;
+                y = y.clamp(0, canvas_height - target_height);
+            }
+
+            let mut canvas = Mat::new_rows_cols_with_default(
+                canvas_height,
+                canvas_width,
+                opencv::core::CV_8UC3,
+                Scalar::all(255.0)
+            ).unwrap();
+
+            let roi = Rect::new(x, y, target_width, target_height);
+            if let Ok(mut canvas_roi) = canvas.roi_mut(roi) {
+                let _ = target_mat.copy_to(&mut canvas_roi);
+            }
+
             let frame = RawFrame {
-                image: Arc::clone(&shared_frame),
+                image: Arc::new(Mutex::new(canvas)),
             };
 
             if tx.send(frame).is_err() {
