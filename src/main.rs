@@ -53,11 +53,11 @@ struct CameraData {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
-struct CVOutput {
+struct CvOutput {
     target: Option<Point>,
     laser: Option<Point>,
 }
-impl From<CameraData> for CVOutput {
+impl From<CameraData> for CvOutput {
     fn from(value: CameraData) -> Self {
         Self {
             target: value.target,
@@ -151,11 +151,59 @@ impl MockServo {
     }
 }
 
+// PID
+pub struct PidController {
+    kp: f32,
+    ki: f32,
+    kd: f32,
+    integral: f32,
+    prev_error: f32,
+    integral_limit: f32,
+}
+
+impl PidController {
+    #[must_use]
+    pub const fn new(kp: f32, ki: f32, kd: f32, integral_limit: f32) -> Self {
+        Self {
+            kp,
+            ki,
+            kd,
+            integral: 0.0,
+            prev_error: 0.0,
+            integral_limit,
+        }
+    }
+
+    pub fn calculate(&mut self, setpoint: f32, current_value: f32, dt: f32) -> f32 {
+        let error = setpoint - current_value;
+
+        let p_out = self.kp * error;
+
+        self.integral = error
+            .mul_add(dt, self.integral)
+            .clamp(-self.integral_limit, self.integral_limit);
+
+        let i_out = self.ki * self.integral;
+
+        let derivative = (error - self.prev_error) / dt;
+        let d_out = self.kd * derivative;
+
+        self.prev_error = error;
+
+        p_out + i_out + d_out
+    }
+
+    pub const fn reset_integral(&mut self) {
+        self.integral = 0.0;
+        self.prev_error = 0.0;
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let start_time = Instant::now();
     let (telemetry_tx, mut telemetry_rx) = sync::mpsc::channel::<TelemetryEnvelope>(16);
-    let (targeting_tx, mut targeting_rx) = sync::watch::channel(CVOutput {
+    let (targeting_tx, mut targeting_rx) = sync::watch::channel(CvOutput {
         target: None,
         laser: None,
     });
