@@ -1,8 +1,9 @@
 use std::time::Duration;
 
 use opencv::{
-    core::{Mat, Rect, Scalar},
+    core::{Mat, Rect, Scalar, Size},
     imgcodecs,
+    imgproc,
     prelude::*,
 };
 use std::sync::{Arc, Mutex};
@@ -60,8 +61,8 @@ pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> 
     let target_mat = imgcodecs::imread(test_image_path, imgcodecs::IMREAD_COLOR)
         .expect("Failed to load static test image");
 
-    let target_width = target_mat.cols();
-    let target_height = target_mat.rows();
+    let base_width = target_mat.cols() as f64;
+    let base_height = target_mat.rows() as f64;
 
     let canvas_width = 1280;
     let canvas_height = 720;
@@ -73,20 +74,28 @@ pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> 
         let mut y = 0;
         let mut dx = 8;
         let mut dy = 8;
+        let mut tick_counter: f64 = 0.0;
 
         loop {
             interval.tick().await;
+            tick_counter += 0.05;
+
+            let scale_x = 0.5 + 0.5 * tick_counter.sin().abs();
+            let scale_y = 0.5 + 0.5 * tick_counter.cos().abs();
+
+            let current_w = (base_width * scale_x) as i32;
+            let current_h = (base_height * scale_y) as i32;
 
             x += dx;
             y += dy;
 
-            if x <= 0 || x + target_width >= canvas_width {
+            if x <= 0 || x + current_w >= canvas_width {
                 dx = -dx;
-                x = x.clamp(0, canvas_width - target_width);
+                x = x.clamp(0, canvas_width - current_w);
             }
-            if y <= 0 || y + target_height >= canvas_height {
+            if y <= 0 || y + current_h >= canvas_height {
                 dy = -dy;
-                y = y.clamp(0, canvas_height - target_height);
+                y = y.clamp(0, canvas_height - current_h);
             }
 
             let mut canvas = Mat::new_rows_cols_with_default(
@@ -96,9 +105,18 @@ pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> 
                 Scalar::all(255.0)
             ).unwrap();
 
-            let roi = Rect::new(x, y, target_width, target_height);
+            let mut squashed_mat = Mat::default();
+            let _ = imgproc::resize(
+                &target_mat,
+                &mut squashed_mat,
+                Size::new(current_w, current_h),
+                0.0, 0.0, imgproc::INTER_LINEAR
+            );
+
+            // 5. Apply the squashed image to the ROI
+            let roi = Rect::new(x, y, current_w, current_h);
             if let Ok(mut canvas_roi) = canvas.roi_mut(roi) {
-                let _ = target_mat.copy_to(&mut canvas_roi);
+                let _ = squashed_mat.copy_to(&mut canvas_roi);
             }
 
             let frame = RawFrame {
