@@ -40,17 +40,30 @@ struct SystemData {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 struct TargetingTele {
-    target: Point,
+    target: Option<Point>,
     laser: Option<Point>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 struct CameraData {
-    target_x: f32,
-    target_y: f32,
-    laser_x: Option<f32>,
-    laser_y: Option<f32>,
+    target: Option<Point>,
+    laser: Option<Point>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+struct CVOutput {
+    target: Option<Point>,
+    laser: Option<Point>,
+}
+impl From<CameraData> for CVOutput {
+    fn from(value: CameraData) -> Self {
+        Self {
+            target: value.target,
+            laser: value.laser,
+        }
+    }
 }
 
 // Fake sensors for testing
@@ -63,30 +76,6 @@ async fn temperature_sensor() -> f32 {
 struct Point {
     x: f32,
     y: f32,
-}
-
-#[allow(clippy::unused_async)] // For testing
-async fn get_target_location() -> Option<Point> {
-    sleep(Duration::from_secs(3)).await; // Simulate CV
-    if UnwrapErr(SysRng).random() {
-        return Some(Point {
-            x: UnwrapErr(SysRng).random(),
-            y: UnwrapErr(SysRng).random(),
-        });
-    }
-    None
-}
-
-#[allow(clippy::unused_async)] // For testing
-async fn get_laser_location() -> Option<Point> {
-    sleep(Duration::from_secs(3)).await;
-    if UnwrapErr(SysRng).random() {
-        return Some(Point {
-            x: UnwrapErr(SysRng).random(),
-            y: UnwrapErr(SysRng).random(),
-        });
-    }
-    None
 }
 
 // Command chain
@@ -166,14 +155,16 @@ impl MockServo {
 async fn main() {
     let start_time = Instant::now();
     let (telemetry_tx, mut telemetry_rx) = sync::mpsc::channel::<TelemetryEnvelope>(16);
-    let (targeting_tx, mut targeting_rx) =
-        sync::watch::channel::<(Point, Option<Point>)>((Point { x: 0.0, y: 0.0 }, None));
+    let (targeting_tx, mut targeting_rx) = sync::watch::channel(CVOutput {
+        target: None,
+        laser: None,
+    });
 
     let tx_sensor = telemetry_tx.clone();
     let state_rx = targeting_rx.clone();
 
+    // Random temperature telemetry
     tokio::spawn(async move {
-        // Tokio task to send a random temperature on tx_sensor every second
         let mut interval = time::interval(Duration::from_secs(10));
 
         loop {
@@ -189,23 +180,58 @@ async fn main() {
         }
     });
 
+    let (camera_tx, mut cv_rx) = tokio::sync::watch::channel(CameraData {
+        target: None,
+        laser: None,
+    });
+
+    // Push "frames" at 30 FPS to channel. Currently just random laser and target data, but in future will have fake or real camera feed.
     tokio::spawn(async move {
-        // Send some random target info
-        let mut interval = time::interval(Duration::from_secs(5));
+        let mut interval = time::interval(Duration::from_millis(33));
 
         loop {
             interval.tick().await;
 
-            if let Some(target_pos) = get_target_location().await {
-                // Long CV pipeline in here
-                let laser_pos = get_laser_location().await;
+            let target = if UnwrapErr(SysRng).random() {
+                Some(Point {
+                    x: UnwrapErr(SysRng).random(),
+                    y: UnwrapErr(SysRng).random(),
+                })
+            } else {
+                None
+            };
 
-                let _ = targeting_tx.send((target_pos, laser_pos));
-            }
+            let laser = if UnwrapErr(SysRng).random() {
+                Some(Point {
+                    x: UnwrapErr(SysRng).random(),
+                    y: UnwrapErr(SysRng).random(),
+                })
+            } else {
+                None
+            };
+
+            let frame = CameraData { target, laser };
+
+            let _ = camera_tx.send(frame);
         }
     });
 
-    // Targeting computer
+    // Pretend to run CV on the camera frame, but really just forwards the data.
+    tokio::spawn(async move {
+        loop {
+            if cv_rx.changed().await.is_err() {
+                break;
+            }
+
+            let latest_frame = cv_rx.borrow().clone();
+
+            sleep(Duration::from_secs(1)).await;
+
+            let _ = targeting_tx.send(latest_frame.into());
+        }
+    });
+
+    // Targeting computer. Currently just prints the currect coordinates.
     tokio::spawn(async move {
         loop {
             println!("{:?}", *targeting_rx.borrow_and_update());
@@ -231,11 +257,11 @@ async fn main() {
 
     let mut watch_ticker = tokio::time::interval(std::time::Duration::from_millis(1_000));
     let watchdog_duration = Duration::from_secs(10);
-    let mut watchdog = Box::pin(tokio::time::sleep(watchdog_duration));
+    let mut watchdog = Box::pin(sleep(watchdog_duration));
 
+    // Handle recieving commands and pings, as well as sending telemetry.
     loop {
         tokio::select! {
-            // Read incoming routed commands and keep-alives from Python
             msg = receiver.next() => {
                 match msg {
                     Some(Ok(Message::Text(text))) => {
@@ -267,7 +293,7 @@ async fn main() {
                         }
                     }
                     Some(Ok(Message::Ping(_))) => {
-                        watchdog = Box::pin(tokio::time::sleep(watchdog_duration));
+                        watchdog = Box::pin(sleep(watchdog_duration));
                     }
                     Some(Ok(Message::Close(_))) | None => {
                         println!("Server disconnected");
@@ -286,12 +312,13 @@ async fn main() {
                 }
             }
 
+            // Peak at the targeting computer and send the data off.
             _ = watch_ticker.tick() => {
                 let latest_cv_state = *state_rx.borrow();
 
                 let msg = TelemetryEnvelope {
                     uptime_ms: start_time.elapsed().as_millis(),
-                    data: TelemetryData::Tele( TargetingTele { target: latest_cv_state.0, laser: latest_cv_state.1 }),
+                    data: TelemetryData::Tele( TargetingTele { target: latest_cv_state.target, laser: latest_cv_state.laser }),
                 };
 
                 let json = serde_json::to_string(&msg).unwrap();
@@ -302,10 +329,11 @@ async fn main() {
                 }
             }
 
+            // If the watchdog fails
             () = &mut watchdog => {
                 println!("No ping received from GCS in 10 seconds!");
 
-                watchdog = Box::pin(tokio::time::sleep(watchdog_duration));
+                watchdog = Box::pin(sleep(watchdog_duration));
             }
         }
     }
