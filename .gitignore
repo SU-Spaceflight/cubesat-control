@@ -2,3 +2,5 @@
 /.direnv
 *.log
 /log/*.log
+*.mp4
+/debug_frames

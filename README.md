@@ -1,5 +1,7 @@
 I'm writing this proof of concept assuming that all the systems are running on a single raspberry pi.
 
+Can be run with `cargo run --release` for normal operation, or `cargo run --features "save_debug_frames" -r` to save the CV output frames to the `debug_frames` directory, where they can be stitched together using something like ffmpeg: `ffmpeg -framerate 30 -i debug_frames/frame_%05d.jpg -c:v libx264 -pix_fmt yuv420p output.mp4`.
+
 # Current plans
 ## Tracking and Aiming
 - The camera feed will be analysed for 3 nested shapes, with an ellipse fitted to the inner one. 
