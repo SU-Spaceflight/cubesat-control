@@ -60,8 +60,8 @@ pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> 
     let target_mat = imgcodecs::imread(test_image_path, imgcodecs::IMREAD_COLOR)
         .expect("Failed to load static test image");
 
-    let base_width = target_mat.cols() as f64;
-    let base_height = target_mat.rows() as f64;
+    let base_width = f64::from(target_mat.cols());
+    let base_height = f64::from(target_mat.rows());
 
     let canvas_width = 1280;
     let canvas_height = 720;
@@ -79,8 +79,8 @@ pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> 
             interval.tick().await;
             tick_counter += 0.05;
 
-            let scale_x = 0.5 + 0.5 * tick_counter.sin().abs();
-            let scale_y = 0.5 + 0.5 * tick_counter.cos().abs();
+            let scale_x = 0.5f64.mul_add(tick_counter.sin().abs(), 0.5);
+            let scale_y = 0.5f64.mul_add(tick_counter.cos().abs(), 0.5);
 
             let current_w = (base_width * scale_x) as i32;
             let current_h = (base_height * scale_y) as i32;
@@ -115,11 +115,24 @@ pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> 
                 imgproc::INTER_LINEAR,
             );
 
-            // 5. Apply the squashed image to the ROI
             let roi = Rect::new(x, y, current_w, current_h);
             if let Ok(mut canvas_roi) = canvas.roi_mut(roi) {
                 let _ = squashed_mat.copy_to(&mut canvas_roi);
             }
+
+            // Move a simulate laser point around in a circle on the canvas
+            let laser_x = 150.0f64.mul_add((tick_counter * 0.8).cos(), f64::from(canvas_width) / 2.0) as i32;
+            let laser_y = 150.0f64.mul_add((tick_counter * 0.8).sin(), f64::from(canvas_height) / 2.0) as i32;
+
+            let _ = imgproc::circle(
+                &mut canvas,
+                opencv::core::Point2i::new(laser_x, laser_y),
+                4,
+                opencv::core::Scalar::new(0.0, 0.0, 255.0, 0.0),
+                -1,
+                imgproc::LINE_8,
+                0,
+            );
 
             let frame = RawFrame {
                 image: Arc::new(Mutex::new(canvas)),
