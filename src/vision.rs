@@ -57,10 +57,10 @@ pub fn spawn_cv_pipeline(
 
             let compute_frame = frame_wrapper.clone();
 
-            let raw_target_point = tokio::task::spawn_blocking(move || {
+            let (raw_target_point, raw_laser_point) = tokio::task::spawn_blocking(move || {
                 let mat = compute_frame.image.lock().unwrap();
                 if mat.empty() {
-                    return None;
+                    return (None, None);
                 }
 
                 let mut gray = opencv::core::Mat::default();
@@ -87,9 +87,9 @@ pub fn spawn_cv_pipeline(
 
                 let mut valid_ellipses = Vec::new();
                 for i in 0..contours.len() {
-                    if let Ok(contour) = contours.get(i) {
-                        if contour.len() >= 5 {
-                            if let Ok(ellipse) = imgproc::fit_ellipse(&contour) {
+                    if let Ok(contour) = contours.get(i)
+                        && contour.len() >= 5
+                            && let Ok(ellipse) = imgproc::fit_ellipse(&contour) {
                                 let area =
                                     ellipse.size.width * ellipse.size.height * std::f32::consts::PI
                                         / 4.0;
@@ -97,8 +97,6 @@ pub fn spawn_cv_pipeline(
                                     valid_ellipses.push((ellipse, area));
                                 }
                             }
-                        }
-                    }
                 }
 
                 let center_tolerance = 5.0;
@@ -111,12 +109,12 @@ pub fn spawn_cv_pipeline(
 
                         let dx = e1.center.x - e2.center.x;
                         let dy = e1.center.y - e2.center.y;
-                        let distance = (dx.powi(2) + dy.powi(2)).sqrt();
+                        let distance = dx.hypot(dy);
 
                         if distance < center_tolerance && (area1 - area2).abs() > 500.0 {
                             found_point = Some(Point {
-                                x: (e1.center.x + e2.center.x) / 2.0,
-                                y: (e1.center.y + e2.center.y) / 2.0,
+                                x: f32::midpoint(e1.center.x, e2.center.x),
+                                y: f32::midpoint(e1.center.y, e2.center.y),
                             });
                             break;
                         }
@@ -126,22 +124,60 @@ pub fn spawn_cv_pipeline(
                     }
                 }
 
-                found_point
+                let mut hsv = opencv::core::Mat::default();
+                let _ = imgproc::cvt_color(
+                    &*mat,
+                    &mut hsv,
+                    imgproc::COLOR_BGR2HSV,
+                    0,
+                    opencv::core::AlgorithmHint::ALGO_HINT_DEFAULT,
+                );
+
+                let mut mask1 = opencv::core::Mat::default();
+                let mut mask2 = opencv::core::Mat::default();
+                let mut laser_mask = opencv::core::Mat::default();
+
+                let lower_red1 = opencv::core::Scalar::new(0.0, 150.0, 150.0, 0.0);
+                let upper_red1 = opencv::core::Scalar::new(10.0, 255.0, 255.0, 0.0);
+                let _ = opencv::core::in_range(&hsv, &lower_red1, &upper_red1, &mut mask1);
+
+                let lower_red2 = opencv::core::Scalar::new(160.0, 150.0, 150.0, 0.0);
+                let upper_red2 = opencv::core::Scalar::new(180.0, 255.0, 255.0, 0.0);
+                let _ = opencv::core::in_range(&hsv, &lower_red2, &upper_red2, &mut mask2);
+
+                let _ = opencv::core::bitwise_or(
+                    &mask1,
+                    &mask2,
+                    &mut laser_mask,
+                    &opencv::core::no_array(),
+                );
+
+                let mut laser_point = None;
+                if let Ok(moments) = imgproc::moments(&laser_mask, true)
+                    && moments.m00 > 0.0 {
+                        // Prevent division by zero
+                        laser_point = Some(Point {
+                            x: (moments.m10 / moments.m00) as f32,
+                            y: (moments.m01 / moments.m00) as f32,
+                        });
+                    }
+
+                (found_point, laser_point)
             })
             .await
-            .unwrap_or(None);
+            .unwrap_or((None, None));
 
             let filtered_point = match (raw_target_point, last_target) {
                 (Some(new_pt), Some(last_pt)) => {
                     let dist =
-                        ((new_pt.x - last_pt.x).powi(2) + (new_pt.y - last_pt.y).powi(2)).sqrt();
+                        (new_pt.x - last_pt.x).hypot(new_pt.y - last_pt.y);
 
                     if dist > jump_threshold {
                         Some(new_pt)
                     } else {
                         Some(Point {
-                            x: last_pt.x + alpha * (new_pt.x - last_pt.x),
-                            y: last_pt.y + alpha * (new_pt.y - last_pt.y),
+                            x: f32::mul_add(alpha, new_pt.x - last_pt.x, last_pt.x),
+                            y: f32::mul_add(alpha, new_pt.y - last_pt.y, last_pt.y),
                         })
                     }
                 }
@@ -166,13 +202,13 @@ pub fn spawn_cv_pipeline(
                     );
                 }
 
-                let filename = format!("debug_frames/frame_{:05}.jpg", frame_counter);
+                let filename = format!("debug_frames/frame_{frame_counter:05}.jpg");
                 let _ = opencv::imgcodecs::imwrite(&filename, &*mat, &opencv::core::Vector::new());
             }
 
             let output = CvOutput {
                 target: raw_target_point,
-                laser: None,
+                laser: raw_laser_point,
             };
 
             let _ = tx.send(output);
