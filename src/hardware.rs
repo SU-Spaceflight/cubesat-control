@@ -77,6 +77,7 @@ impl MockServo {
         }
     }
 
+    #[allow(dead_code)]
     pub fn apply_trim(&mut self, trim_val: f32) {
         let new_angle = self.current_angle + trim_val;
         self.set_absolute(new_angle);
