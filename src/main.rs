@@ -6,8 +6,8 @@ use tokio::sync;
 use tracing::info;
 use tracing::level_filters::LevelFilter;
 use tracing_appender::rolling::Rotation;
-use tracing_subscriber::{EnvFilter, Layer};
 use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::{EnvFilter, Layer};
 
 use crate::arbiter::{LocalCommand, spawn_command_arbiter};
 use crate::control::spawn_targeting_computer;

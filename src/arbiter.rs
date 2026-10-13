@@ -49,7 +49,9 @@ pub fn spawn_command_arbiter(
                         current_pan = (current_pan + pan_delta).clamp(MIN_ANGLE, MAX_ANGLE);
                         current_tilt = (current_tilt + tilt_delta).clamp(MIN_ANGLE, MAX_ANGLE);
 
-                        tracing::trace!("AutoTrim applied. New Pan: {current_pan:.2}, New Tilt: {current_tilt:.2}");
+                        tracing::trace!(
+                            "AutoTrim applied. New Pan: {current_pan:.2}, New Tilt: {current_tilt:.2}"
+                        );
 
                         if let Ok(mut p) = pan_servo.lock() {
                             p.set_absolute(current_pan + 90.0);

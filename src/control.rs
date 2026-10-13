@@ -4,7 +4,7 @@ use tokio::{
     sync::{mpsc, watch},
     task::JoinHandle,
 };
-use tracing::{trace, info, warn, error};
+use tracing::{error, info, trace, warn};
 
 use crate::{arbiter::LocalCommand, vision::CvOutput};
 
