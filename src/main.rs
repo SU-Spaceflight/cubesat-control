@@ -32,7 +32,7 @@ async fn main() {
     #[allow(clippy::expect_used)]
     let file_appender = tracing_appender::rolling::Builder::new()
         .rotation(Rotation::DAILY)
-        .filename_prefix("flight_system.log")
+        .filename_suffix("flight_system.log")
         .build("log")
         .expect("Failed to initialize rolling file appender");
 
