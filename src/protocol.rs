@@ -1,6 +1,3 @@
-#![allow(clippy::unwrap_used)] // Just for preliminary testing
-#![allow(clippy::expect_used)]
-
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
