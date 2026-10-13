@@ -6,7 +6,10 @@ use tokio::{
     sync::mpsc,
     time::{interval, sleep},
 };
-use tokio_tungstenite::{connect_async, tungstenite::{Message, Bytes}};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{Bytes, Message},
+};
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -111,18 +114,24 @@ pub async fn run_websocket_client(
 
                 // Forward internal broadcast telemetry to the Server
                 telemetry_opt = telemetry_rx.recv() => {
-                    if let Some(telemetry) = telemetry_opt {
-                        let json = serde_json::to_string(&telemetry).unwrap();
-                        if sender.send(Message::Text(json.into())).await.is_err() {
-                            warn!("Failed to send telemetry. Connection likely lost.");
-                            break; // Break the inner loop to trigger a reconnect
-                        }
-                    } else {
-                        // If the internal mpsc channel closes, the main app is shutting down
-                        warn!("Internal telemetry channel closed. Shutting down client.");
-                        return;
-                    }
-                }
+                                    if let Some(telemetry) = telemetry_opt {
+                                        match serde_json::to_string(&telemetry) {
+                                            Ok(json) => {
+                                                if sender.send(Message::Text(json.into())).await.is_err() {
+                                                    warn!("Failed to send telemetry. Connection likely lost.");
+                                                    break; // Break the inner loop to trigger a reconnect
+                                                }
+                                            }
+                                            Err(e) => {
+                                                error!("Failed to serialize telemetry data: {e}");
+                                            }
+                                        }
+                                    } else {
+                                        // If the internal mpsc channel closes, the main app is shutting down
+                                        warn!("Internal telemetry channel closed. Shutting down client.");
+                                        return;
+                                    }
+                                }
 
                 _ = ping_interval.tick() => {
                     if let Err(e) = sender.send(Message::Ping(Bytes::from(""))).await {
