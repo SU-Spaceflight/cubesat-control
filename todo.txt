@@ -6,5 +6,10 @@ x 2026-10-12 2026-10-08 Read from fake sensors for testing
 2026-10-08 Read from real camera
 x 2026-10-12 2026-10-08 Parse commands from server
 x 2026-10-12 2026-10-08 Bundle telemetry to send via websockets
-2026-10-08 Set up CV on camera input
+x 2026-10-13 2026-10-08 Set up CV on camera input
 2026-10-08 Set up servo control systems
+2026-10-13 Set up macro control loop
+2026-10-13 Add websocket ip configuration
+2026-10-13 Add a mock flight computer, waiting on info from ADCS
+2026-10-13 Add distortion handling to CV pipeline
+2026-10-13 Add QR code identification to CV pipeline
