@@ -14,9 +14,8 @@ use tracing_subscriber::layer::SubscriberExt;
 
 use crate::arbiter::{LocalCommand, spawn_command_arbiter};
 use crate::control::spawn_targeting_computer;
-use crate::hardware::{MockServo, spawn_camera_feed};
+use crate::hardware::{MockServo, spawn_camera_feed, spawn_temperature_monitor};
 use crate::protocol::{TelemetryEnvelope, run_websocket_client};
-use crate::sensors::spawn_temperature_monitor;
 use crate::vision::{CvOutput, RawFrame, spawn_cv_pipeline, spawn_targeting_telemetry_watcher};
 
 mod arbiter;
@@ -24,7 +23,6 @@ mod commands;
 mod control;
 mod hardware;
 mod protocol;
-mod sensors;
 mod vision;
 
 #[tokio::main]

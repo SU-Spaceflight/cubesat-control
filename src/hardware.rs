@@ -4,18 +4,61 @@
     clippy::cast_possible_wrap,
     clippy::arithmetic_side_effects
 )]
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use opencv::{
     core::{Mat, Rect, Scalar, Size},
     imgcodecs, imgproc,
     prelude::*,
 };
+use rand::{RngExt, rand_core::UnwrapErr, rngs::SysRng};
 use std::sync::{Arc, Mutex};
-use tokio::{sync::watch, task::JoinHandle, time};
-use tracing::{error, trace, warn};
+use tokio::{
+    sync::{mpsc, watch},
+    task::JoinHandle,
+    time,
+};
+use tracing::{debug, error, trace, warn};
 
-use crate::vision::RawFrame;
+use crate::{
+    protocol::{SensorData, TelemetryData, TelemetryEnvelope},
+    vision::RawFrame,
+};
+
+#[allow(clippy::unused_async)] // For testing
+pub async fn temperature_sensor() -> f32 {
+    UnwrapErr(SysRng).random_range(20.0..60.0)
+}
+
+pub fn spawn_temperature_monitor(
+    tx: mpsc::Sender<TelemetryEnvelope>,
+    start_time: Instant,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut interval = time::interval(Duration::from_secs(10));
+
+        loop {
+            interval.tick().await;
+            let temp = temperature_sensor().await;
+
+            if temp < 80.0 {
+                debug!("CPU Temp: {temp:.1}°C")
+            } else {
+                warn!("CPU temp high: {temp:.1}°C")
+            }
+
+            let msg = TelemetryEnvelope {
+                uptime_ms: start_time.elapsed().as_millis(),
+                data: TelemetryData::Sensor(SensorData { cpu_temp_c: temp }),
+            };
+
+            if tx.send(msg).await.is_err() {
+                warn!("Telemetry channel closed, shutting down temperature monitor.");
+                break;
+            }
+        }
+    })
+}
 
 pub struct MockServo {
     name: String,
