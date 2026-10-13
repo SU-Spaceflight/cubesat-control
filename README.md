@@ -4,6 +4,8 @@ A proof of concept satellite controller designed to run on a Raspberry Pi comput
 
 For a detailed implementation document, refer to [SPEC.md](SPEC.md).
 
+To use the githooks provided, run `git config core.hooksPath .githooks`.
+
 ## Prerequisites & Dependencies
 
 ### Option A: Nix (Recommended)
