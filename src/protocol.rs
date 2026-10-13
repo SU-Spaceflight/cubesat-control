@@ -126,7 +126,7 @@ pub async fn run_websocket_client(
 
                 _ = ping_interval.tick() => {
                     if let Err(e) = sender.send(Message::Ping(Bytes::from(""))).await {
-                        println!("Failed to send ping: {}", e);
+                        println!("Failed to send ping: {e}");
                         break;
                     }
                 }

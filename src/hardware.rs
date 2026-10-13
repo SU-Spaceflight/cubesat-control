@@ -42,9 +42,9 @@ pub fn spawn_temperature_monitor(
             let temp = temperature_sensor().await;
 
             if temp < 80.0 {
-                debug!("CPU Temp: {temp:.1}°C")
+                debug!("CPU Temp: {temp:.1}°C");
             } else {
-                warn!("CPU temp high: {temp:.1}°C")
+                warn!("CPU temp high: {temp:.1}°C");
             }
 
             let msg = TelemetryEnvelope {
