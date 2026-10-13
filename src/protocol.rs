@@ -5,8 +5,11 @@ use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use tokio::{sync::mpsc, time::sleep};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio::{
+    sync::mpsc,
+    time::{interval, sleep},
+};
+use tokio_tungstenite::{connect_async, tungstenite::{Message, Bytes}};
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -64,6 +67,7 @@ pub async fn run_websocket_client(
 ) {
     let reconnect_delay = Duration::from_secs(3);
     let watchdog_duration = Duration::from_secs(10);
+    let mut ping_interval = interval(Duration::from_secs(3));
 
     loop {
         info!("Attempting to connect to GCS server at {connect_addr}");
@@ -96,12 +100,13 @@ pub async fn run_websocket_client(
                                 }
                             }
                         }
-                        Some(Ok(Message::Ping(_))) => {
-                            watchdog = Box::pin(sleep(watchdog_duration));
-                        }
                         Some(Ok(Message::Close(_))) | None => {
                             warn!("Server disconnected.");
                             break; // Break the inner loop to trigger a reconnect
+                        }
+                        Some(Ok(Message::Pong(_))) => {
+                            info!("Pong recieved, watchdog reset");
+                            watchdog = Box::pin(sleep(watchdog_duration));
                         }
                         _ => {}
                     }
@@ -121,6 +126,14 @@ pub async fn run_websocket_client(
                         return;
                     }
                 }
+
+                _ = ping_interval.tick() => {
+                    if let Err(e) = sender.send(Message::Ping(Bytes::from(""))).await {
+                        println!("Failed to send ping: {}", e);
+                        break;
+                    }
+                }
+
 
                 // If the watchdog fails
                 () = &mut watchdog => {
