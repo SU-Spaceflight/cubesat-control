@@ -5,3 +5,5 @@
 /log
 *.mp4
 /debug_frames
+.ropeproject/
+.venv/
