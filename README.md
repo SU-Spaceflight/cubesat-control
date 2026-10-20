@@ -90,8 +90,68 @@ ffmpeg -framerate 30 -i debug_frames/frame_%05d.jpg -c:v libx264 -pix_fmt yuv420
 
 ## Cross-Compilation for Raspberry Pi 4
 
-To cross-compile for an `aarch64-unknown-linux-gnu` target:
+> [!NOTE]
+> I have only tested these steps on my machine as of writing this. The steps should be similar for non-NixOS machines, but may differ (maybe easier, maybe not).
+
+For cross-compilation I am using [cross-rs](https://github.com/cross-rs/cross) which creates a docker container that the code is compiled in. In this case, it will create a debian docker environment and cross-compile within it to make use of debians available arm64 packages. [Dockerfile.cross](Dockerfile.cross) is the used configuration file for cross-rs.
+
+### Steps for cross-compilation
+
+Creates the docker container, installs dependencies and compiles within it. Docker or Podman is required.
 
 ```bash
-cargo build --target aarch64-unknown-linux-gnu --release
+cross build --target aarch64-unknown-linux-gnu --release --features old_cv
 ```
+
+Assuming that it compiled with no issues, just running the binary on the Pi likely will not work as the linked libraries are not available or are not the correct version.
+
+Collect all the libraries (minus a few exceptions) within the docker environment and place them within ./lib:
+
+```bash
+docker run --rm -v "$PWD/lib:/out" cubesat-cross-image bash -c " \
+  find / -name '*.so*' 2>/dev/null | while read lib; do \
+    if file -L \"\$lib\" 2>/dev/null | grep -q 'aarch64'; then \
+      cp -L \"\$lib\" /out/ 2>/dev/null || true; \
+    fi; \
+  done; \
+  rm -f /out/libc.so* /out/libm.so* /out/libpthread.so* /out/libdl.so* /out/librt.so* /out/libresolv.so* /out/ld-linux-*.so* \
+"
+```
+
+After that, copy the following to the raspberry pi:
+
+```
+./target/aarch64-unknown-linux-gnu/release/cubesat-control
+./lib
+```
+
+[rsync](https://github.com/RsyncProject/rsync) example:
+
+```bash
+rsync -avzP lib target/target/aarch64-unknown-linux-gnu/release/cubesat-control {IP-ADDRESS}:~/
+```
+
+This will place all the files in the Pi's home directory.
+
+To run the program, you need to tell the program where to find the libraries, so run it with this environment variable:
+
+```
+LD_LIBRARY_PATH=./lib ./cubesat-control
+```
+
+### File size
+
+The lib directory is quite large (>2GB for me). You can reduce the size by first stripping out all of the useless metadata and debug symbols using strip.
+
+```bash
+strip --strip-unneeded lib/*.so* 2>/dev/null || true
+```
+
+You can also remove un-needed libraries (since copying all of them leads to many that are never used being copied).
+
+```bash
+mkdir lib-slim
+LD_LIBRARY_PATH=./lib ldd ./cubesat-control | grep '=> ./lib/' | awk '{print $3}' | xargs -I {} cp {} lib-slim/
+```
+
+I would recommend running the program with `LD_LIBRARY_PATH` set to `./lib-slim` to see if the program loads any libraries during runtime (which wouldn't be caught by ldd). If any are required, copy them over from `./lib`. You can then remove `./lib` and rename `./lib-slim` to `./lib`.
