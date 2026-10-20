@@ -1,6 +1,4 @@
 {
-  description = "Rust (Native + RPI 4 Cross) and Python";
-
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
@@ -19,24 +17,38 @@
     flake-utils.lib.eachDefaultSystem (
       system: let
         overlays = [(import rust-overlay)];
-        pkgs = import nixpkgs {
-          inherit system overlays;
-        };
-
-        crossPkgs = pkgs.pkgsCross.aarch64-multiplatform;
-
+        pkgs = import nixpkgs {inherit system overlays;};
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
           targets = ["aarch64-unknown-linux-gnu"];
         };
       in {
         devShells.default = pkgs.mkShell {
-          buildInputs = [
+          nativeBuildInputs = [
+            (pkgs.writeScriptBin "rustup" ''
+              #!/usr/bin/env bash
+              # Fake rustup to trick cross-rs into seeing what it wants to see
+
+              if [ "$1" = "toolchain" ] && [ "$2" = "list" ]; then
+                echo "stable-x86_64-unknown-linux-gnu (default)"
+                exit 0
+              fi
+
+              if [ "$1" = "target" ] && [ "$2" = "list" ]; then
+                echo "aarch64-unknown-linux-gnu (installed)"
+                echo "x86_64-unknown-linux-gnu (installed)"
+                exit 0
+              fi
+
+              if [ "$1" = "run" ]; then
+                shift 2
+                exec "$@"
+              fi
+
+              exit 0
+            '')
             rustToolchain
             pkgs.python3
             pkgs.opencv
-          ];
-
-          nativeBuildInputs = [
             pkgs.pkg-config
             pkgs.clang
             pkgs.mold
@@ -44,6 +56,7 @@
 
           packages = with pkgs; [
             bacon
+            cargo-cross
             python3Packages.pip
             python3Packages.virtualenv
           ];
@@ -64,11 +77,7 @@
             fi
           '';
           LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
-
           BINDGEN_EXTRA_CLANG_ARGS = "-isystem ${pkgs.llvmPackages.libclang.lib}/lib/clang/${pkgs.libclang.version}/include";
-
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "${crossPkgs.stdenv.cc}/bin/${crossPkgs.stdenv.cc.targetPrefix}cc";
-          PKG_CONFIG_ALLOW_CROSS = "1";
         };
       }
     );
