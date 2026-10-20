@@ -1,0 +1,3 @@
+[target.aarch64-unknown-linux-gnu]
+image = "cubesat-cross-image"
+dockerfile = "Dockerfile.cross"
