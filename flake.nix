@@ -52,6 +52,7 @@
             pkgs.pkg-config
             pkgs.clang
             pkgs.mold
+            pkgs.openssl
           ];
 
           packages = with pkgs; [
