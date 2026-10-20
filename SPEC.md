@@ -29,7 +29,7 @@ This is subject to change, I just made something to start testing with, with the
 ```json
 {
   "uptime_ms": 8467,
-  "dest": "sensor",
+  "type": "cpu_temp_packet",
   "payload": {
     "cpu_temp_c": 30.40753233
   }
@@ -41,15 +41,15 @@ Another example:
 ```json
 {
   "uptime_ms": 75983,
-  "dest": "tele",
+  "type": "tele",
   "payload": {
     "target": {
       "x": 1049.5317,
       "y": 462.37814
     },
     "laser": {
-      "x": 775.0,
-      "y": 295.0
+      "x": null,
+      "y": null
     }
   }
 }

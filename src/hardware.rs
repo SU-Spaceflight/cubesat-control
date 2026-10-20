@@ -21,13 +21,13 @@ use tokio::{
 use tracing::{debug, error, trace, warn};
 
 use crate::{
-    protocol::{SensorData, TelemetryData, TelemetryEnvelope},
+    protocol::{CpuTempData, TelemetryData, TelemetryEnvelope},
     vision::RawFrame,
 };
 
 #[allow(clippy::unused_async)] // For testing
 pub async fn temperature_sensor() -> f32 {
-    UnwrapErr(SysRng).random_range(20.0..60.0)
+    UnwrapErr(SysRng).random_range(20.0..100.0)
 }
 
 pub fn spawn_temperature_monitor(
@@ -35,7 +35,7 @@ pub fn spawn_temperature_monitor(
     start_time: Instant,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
-        let mut interval = time::interval(Duration::from_secs(10));
+        let mut interval = time::interval(Duration::from_secs(3));
 
         loop {
             interval.tick().await;
@@ -49,7 +49,7 @@ pub fn spawn_temperature_monitor(
 
             let msg = TelemetryEnvelope {
                 uptime_ms: start_time.elapsed().as_millis(),
-                data: TelemetryData::Sensor(SensorData { cpu_temp_c: temp }),
+                data: TelemetryData::Sensor(CpuTempData { cpu_temp_c: temp }),
             };
 
             if tx.send(msg).await.is_err() {

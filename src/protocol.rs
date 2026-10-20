@@ -26,9 +26,9 @@ pub struct TelemetryEnvelope {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)] // Data to send
-#[serde(tag = "dest", content = "payload", rename_all = "snake_case")]
+#[serde(tag = "type", content = "payload")]
 pub enum TelemetryData {
-    Sensor(SensorData),
+    Sensor(CpuTempData),
     Camera(CameraData),
     Tele(TargetingTele),
     System(SystemData),
@@ -36,7 +36,7 @@ pub enum TelemetryData {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
-pub struct SensorData {
+pub struct CpuTempData {
     pub cpu_temp_c: f32,
 }
 
@@ -177,6 +177,10 @@ pub async fn handle_command(command: CommandEnvelope, arbiter_tx: &mpsc::Sender<
             } else {
                 info!("Forwarded Tracking Mode toggle ({enabled}) to Arbiter");
             }
+        }
+
+        CommandEnvelope::Gimbal(GimbalCommands::TrimPan(val)) => {
+            info!("Recieved command to change gimbal pan by {val:1} degrees");
         }
 
         CommandEnvelope::Gimbal(_) => {
