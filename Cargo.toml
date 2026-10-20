@@ -22,6 +22,7 @@ features = ["imgproc", "imgcodecs", "wechat_qrcode"]
 [features]
 default = []
 save_debug_frames = []
+old_cv = []
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
