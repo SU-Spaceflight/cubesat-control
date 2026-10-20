@@ -77,13 +77,21 @@ pub fn spawn_cv_pipeline(
                 let mut gray = opencv::core::Mat::default();
                 let mut edges = opencv::core::Mat::default();
 
-                let _ = imgproc::cvt_color(
-                    &*mat,
-                    &mut gray,
-                    imgproc::COLOR_BGR2GRAY,
-                    0,
-                    opencv::core::AlgorithmHint::ALGO_HINT_DEFAULT,
-                );
+                #[cfg(feature = "old_cv")]
+                {
+                    let _ = imgproc::cvt_color(&*mat, &mut gray, imgproc::COLOR_BGR2GRAY, 0);
+                }
+                #[cfg(not(feature = "old_cv"))]
+                {
+                    let _ = imgproc::cvt_color(
+                        &*mat,
+                        &mut gray,
+                        imgproc::COLOR_BGR2GRAY,
+                        0,
+                        opencv::core::AlgorithmHint::ALGO_HINT_DEFAULT,
+                    );
+                }
+
                 let _ = imgproc::canny(&gray, &mut edges, 50.0, 150.0, 3, false);
 
                 let mut contours =
@@ -140,14 +148,20 @@ pub fn spawn_cv_pipeline(
                 }
 
                 let mut hsv = opencv::core::Mat::default();
-                let _ = imgproc::cvt_color(
-                    &*mat,
-                    &mut hsv,
-                    imgproc::COLOR_BGR2HSV,
-                    0,
-                    opencv::core::AlgorithmHint::ALGO_HINT_DEFAULT,
-                );
-
+                #[cfg(feature = "old_cv")]
+                {
+                    let _ = imgproc::cvt_color(&*mat, &mut hsv, imgproc::COLOR_BGR2HSV, 0);
+                }
+                #[cfg(not(feature = "old_cv"))]
+                {
+                    let _ = imgproc::cvt_color(
+                        &*mat,
+                        &mut hsv,
+                        imgproc::COLOR_BGR2HSV,
+                        0,
+                        opencv::core::AlgorithmHint::ALGO_HINT_DEFAULT,
+                    );
+                }
                 let mut mask1 = opencv::core::Mat::default();
                 let mut mask2 = opencv::core::Mat::default();
                 let mut laser_mask = opencv::core::Mat::default();
