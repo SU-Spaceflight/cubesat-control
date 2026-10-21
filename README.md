@@ -74,6 +74,19 @@ RUST_LOG=trace cargo run --release
 
 Logs are mirrored in daily rotating files in `./log/flight_system.log.*` at `debug` level, while standard console output adheres to `RUST_LOG` (defaults to `info`).
 
+## Configuration
+
+Possible configuration values are defined in [config.rs](src/config.rs). Default values are defined in [config.toml](config.toml). Each configuration value can be overridden when running the program.
+
+For example, here is how to change the IP of the GC that the satellite tries to connect to.
+
+```bash
+SAT__NETWORK__GROUND_STATION_IP="192.168.1.100" cargo run -r
+```
+
+> [!NOTE]
+> `.env` support coming soon!
+
 ## Debugging CV & Recording Video
 
 To dump processed OpenCV frames with detected centroid overlays:
