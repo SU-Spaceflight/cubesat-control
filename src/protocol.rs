@@ -21,6 +21,7 @@ use tracing::{debug, error, info, warn};
 use crate::{
     arbiter::LocalCommand,
     commands::{CommandEnvelope, GimbalCommands},
+    config::NetworkConfig,
     vision::Point,
 };
 
@@ -98,19 +99,25 @@ pub struct CameraData {
 /// * `command_tx` - An `mpsc` sender used to route parsed commands from the GC
 ///   down to the satellite's command arbiter.
 pub async fn run_websocket_client(
-    connect_addr: &str,
     mut telemetry_rx: mpsc::Receiver<TelemetryEnvelope>,
     command_tx: mpsc::Sender<LocalCommand>,
+    network_config: NetworkConfig,
 ) {
     let reconnect_delay = Duration::from_secs(3);
     let watchdog_duration = Duration::from_secs(10);
     let mut ping_interval = interval(Duration::from_secs(3));
 
+    let connect_address_string = format!(
+        "ws://{}:{}",
+        network_config.ground_station_ip, network_config.telemetry_port
+    );
+    let connect_address = connect_address_string.as_str();
+
     loop {
-        info!("Attempting to connect to GCS server at {connect_addr}");
+        info!("Attempting to connect to GCS server at {connect_address}");
 
         // Attempt to connect
-        let ws_stream = match connect_async(connect_addr).await {
+        let ws_stream = match connect_async(connect_address).await {
             Ok((stream, _)) => stream,
             Err(e) => {
                 warn!("Connection failed: {e}. Retrying in {reconnect_delay:?}");

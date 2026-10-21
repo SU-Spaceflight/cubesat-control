@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+config = "0.15.27"
 futures-util = "0.3.34"
 rand = { version = "0.10.3", features = ["chacha"] }
 serde = { version = "1.0.229", features = ["derive"] }

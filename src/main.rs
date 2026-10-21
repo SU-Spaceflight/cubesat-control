@@ -24,6 +24,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use ::config::{Config, Environment, File};
 use opencv::core::Mat;
 use tokio::sync;
 use tracing::info;
@@ -33,6 +34,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
 use crate::arbiter::{LocalCommand, spawn_command_arbiter};
+use crate::config::SatelliteConfig;
 use crate::control::spawn_targeting_computer;
 use crate::hardware::{MockServo, spawn_camera_feed, spawn_temperature_monitor};
 use crate::protocol::{TelemetryEnvelope, run_websocket_client};
@@ -40,6 +42,7 @@ use crate::vision::{CvOutput, RawFrame, spawn_cv_pipeline, spawn_targeting_telem
 
 mod arbiter;
 mod commands;
+mod config;
 mod control;
 mod hardware;
 mod protocol;
@@ -47,6 +50,7 @@ mod vision;
 
 #[tokio::main]
 async fn main() {
+    // Logging setup
     #[allow(clippy::expect_used)]
     let file_appender = tracing_appender::rolling::Builder::new()
         .rotation(Rotation::DAILY)
@@ -77,6 +81,21 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("Unable to create tracing subscriber");
 
+    // Config setup
+    // config options are defined in config.rs. Default config options are defined in config.toml. To override config values at runtime, environment variables can be used. E.g. `SAT__NETWORK__GROUND_STATION_IP="192.168.1.100" cargo run -r`
+    #[allow(clippy::expect_used)]
+    let settings = Config::builder()
+        .add_source(File::with_name("config.toml"))
+        .add_source(Environment::with_prefix("SAT").separator("__"))
+        .build()
+        .expect("Failed to build config");
+
+    #[allow(clippy::expect_used)]
+    let app_config: SatelliteConfig = settings
+        .try_deserialize()
+        .expect("Failed to deserialize config");
+
+    // Starting
     info!("Starting mainboard");
 
     let start_time = Instant::now();
@@ -84,6 +103,7 @@ async fn main() {
     let pan_servo = Arc::new(Mutex::new(MockServo::new("Pan Servo", 0, 180.0)));
     let tilt_servo = Arc::new(Mutex::new(MockServo::new("Tilt Servo", 1, 180.0)));
 
+    // Channel setup
     let (telemetry_tx, telemetry_rx) = sync::mpsc::channel::<TelemetryEnvelope>(16);
 
     let initial_mat = Mat::default();
@@ -99,6 +119,8 @@ async fn main() {
 
     let (command_tx, command_rx) = sync::mpsc::channel::<LocalCommand>(16);
 
+    // Task spawning
+
     spawn_temperature_monitor(telemetry_tx.clone(), start_time);
     spawn_targeting_telemetry_watcher(targeting_rx.clone(), telemetry_tx, start_time);
 
@@ -108,5 +130,5 @@ async fn main() {
 
     spawn_command_arbiter(command_rx, pan_servo.clone(), tilt_servo.clone());
 
-    run_websocket_client("ws://127.0.0.1:8080", telemetry_rx, command_tx.clone()).await;
+    run_websocket_client(telemetry_rx, command_tx.clone(), app_config.network).await;
 }
