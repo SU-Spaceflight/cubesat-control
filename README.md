@@ -118,7 +118,7 @@ docker run --rm -v "$PWD/lib:/out" cubesat-cross-image bash -c " \
 "
 ```
 
-After that, copy the following to the raspberry pi:
+After that, copy the following to the raspberry Pi:
 
 ```
 ./target/aarch64-unknown-linux-gnu/release/cubesat-control
