@@ -1,3 +1,5 @@
+//! Functionality for interfacing with hardware devices. Currently most functionality is either generated or is a data sink while hardware is being sorted out.
+
 #![allow(
     clippy::cast_possible_truncation,
     clippy::as_conversions,
@@ -25,13 +27,21 @@ use crate::{
     vision::RawFrame,
 };
 
-#[allow(clippy::unused_async)] // For testing
+/// Random temperatures
+#[allow(clippy::unused_async)]
 pub async fn temperature_sensor() -> f32 {
     UnwrapErr(SysRng).random_range(20.0..100.0)
 }
 
+/// Background task to check the CPU temperature every 3 seconds and send the data over the telemetry channel
+/// # Arguments
+/// * `telemetry_tx` - `mpsc` channel to send gimbal commands on.
+/// * `start_time` - The time to base telemetry `uptime_ms` on.
+///
+/// # Returns
+/// A `JoinHandle` to the spawned Tokio task.
 pub fn spawn_temperature_monitor(
-    tx: mpsc::Sender<TelemetryEnvelope>,
+    telemetry_tx: mpsc::Sender<TelemetryEnvelope>,
     start_time: Instant,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
@@ -49,10 +59,10 @@ pub fn spawn_temperature_monitor(
 
             let msg = TelemetryEnvelope {
                 uptime_ms: start_time.elapsed().as_millis(),
-                data: TelemetryData::Sensor(CpuTempData { cpu_temp_c: temp }),
+                data: TelemetryData::CpuTempSensor(CpuTempData { cpu_temp_c: temp }),
             };
 
-            if tx.send(msg).await.is_err() {
+            if telemetry_tx.send(msg).await.is_err() {
                 warn!("Telemetry channel closed, shutting down temperature monitor.");
                 break;
             }
@@ -60,6 +70,7 @@ pub fn spawn_temperature_monitor(
     })
 }
 
+/// Fake servo for testing
 pub struct MockServo {
     name: String,
     channel: u8,
@@ -67,6 +78,7 @@ pub struct MockServo {
     max_angle: f32,
 }
 impl MockServo {
+    /// Creates a new servo
     #[must_use]
     pub fn new(name: &str, channel: u8, max_angle: f32) -> Self {
         Self {
@@ -88,6 +100,7 @@ impl MockServo {
         self.update_hardware();
     }
 
+    // Fake updating that logs what it would send to the servo
     fn update_hardware(&self) {
         let pulse_width_ms = 1.0 + (self.current_angle / self.max_angle);
         let duty_cycle = pulse_width_ms / 20.0;
@@ -103,7 +116,14 @@ impl MockServo {
     }
 }
 
-// Bounce the target around a screen like a DVD logo
+/// Creates a fake camera feed as a background task that bounces a fake target image around a screen like a DVD logo. It also squashes the target randomly to simulate planar distortion.
+///
+/// # Arguments
+/// * `tx` - `watch` channel to send the generated frames on.
+/// * `test_image_path` - location of test image
+///
+/// # Returns
+/// A `JoinHandle` to the spawned Tokio task.
 pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> JoinHandle<()> {
     let Ok(target_mat) = imgcodecs::imread(test_image_path, imgcodecs::IMREAD_COLOR) else {
         error!("Failed to load static test image");
@@ -175,6 +195,7 @@ pub fn spawn_camera_feed(tx: watch::Sender<RawFrame>, test_image_path: &str) -> 
             }
 
             // Move a simulated laser point around in a circle on the canvas
+            // Short drops are to test PID TTL, longer drop is to test kinematics without PID
             let cycle = frame_count % 300;
             #[allow(clippy::match_same_arms)]
             let laser_visible = match cycle {

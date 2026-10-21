@@ -1,3 +1,5 @@
+//! Contains all commands that the GC might send to the satellite.
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

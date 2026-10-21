@@ -1,3 +1,26 @@
+//! The main entry point for the `CubeSat` satellite controller.
+//!
+//! This application is built on the Tokio asynchronous runtime. The `main` module
+//! is responsible for initializing system-wide configurations, instantiating shared
+//! state, and orchestrating the various background tasks that make up the
+//! satellite's operating system.
+//!
+//! # System Initialization
+//! 1. **Logging setup**: Initializes the `tracing` subscriber to output logs to both
+//!    the standard console and rolling daily log files.
+//! 2. **Hardware state**: Creates thread-safe references (`Arc<Mutex<...>>`) for
+//!    hardware components like the pan and tilt servos.
+//! 3. **Channel wiring**: Sets up `mpsc` (multi-producer, single-consumer) and
+//!    `watch` channels to facilitate non-blocking communication between the independent
+//!    subsystems (e.g., routing camera frames to the CV pipeline, or routing target
+//!    data to the telemetry sender).
+//! 4. **Task spawning**: Launches all primary operational loops in the background:
+//!    - Hardware monitors (temperature).
+//!    - The camera feed and computer vision pipeline.
+//!    - The targeting computer and command arbiter.
+//! 5. **Network loop**: Finally, blocks on the WebSocket client loop to maintain
+//!    communication with Ground Control.
+
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 

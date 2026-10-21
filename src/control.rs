@@ -1,3 +1,7 @@
+//! manages the satellite's control loop and targeting systems.
+//!
+//! This module translates computer vision outputs into physical hardware movements. It houses the continuous targeting computer task and the PID controllers responsible for smooth gimbal tracking.
+
 use std::time::{Duration, Instant};
 
 use tokio::{
@@ -8,6 +12,11 @@ use tracing::{error, info, trace, warn};
 
 use crate::{arbiter::LocalCommand, vision::CvOutput};
 
+/// A standard Proportional-Integral-Derivative (PID) controller.
+///
+/// Maintains system stability by calculating the error between a desired
+/// setpoint and the current value, applying correction based on proportional,
+/// integral, and derivative terms.
 pub struct PidController {
     kp: f32,
     ki: f32,
@@ -17,6 +26,7 @@ pub struct PidController {
     integral_limit: f32,
 }
 impl PidController {
+    /// Constructs a new `PidController` from given P, I, and D terms, as well as an integral limit.
     #[must_use]
     pub const fn new(kp: f32, ki: f32, kd: f32, integral_limit: f32) -> Self {
         Self {
@@ -29,6 +39,15 @@ impl PidController {
         }
     }
 
+    /// Calculates the next control output based on the current system error.
+    ///
+    /// # Arguments
+    /// * `setpoint` - The desired target value (e.g., target pixel coordinate).
+    /// * `current_value` - The current measured value (e.g., laser pixel coordinate).
+    /// * `dt` - The time delta in seconds since the last calculation.
+    ///
+    /// # Returns
+    /// The calculated correction value to be applied to the system.
     pub fn calculate(&mut self, setpoint: f32, current_value: f32, dt: f32) -> f32 {
         let error = setpoint - current_value;
 
@@ -48,17 +67,28 @@ impl PidController {
         p_out + i_out + d_out
     }
 
+    /// Resets the integral and previous error to 0. This is used to reset the PID if the laser is lost.
     pub const fn reset_integral(&mut self) {
         self.integral = 0.0;
         self.prev_error = 0.0;
     }
 }
 
+/// Spawns a targeting computer background task. The targeting computer watches a `watch` channel for new information about the laser and target. When it receives a new set of values, it either uses a PID loop or a general purpose gimbal controller based off of the screen position.
+///
+/// # Arguments
+/// * `rx` - `watch` channel that supplies the target and laser coordinates.
+/// * `tx` - `mpsc` channel to send gimbal commands on.
+///
+/// # Returns
+/// A `JoinHandle` to the spawned Tokio task.
 pub fn spawn_targeting_computer(
     mut rx: watch::Receiver<CvOutput>,
     tx: mpsc::Sender<LocalCommand>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
+        // Placeholder PID values
+        // TODO read from config file
         let mut pan_pid = PidController::new(0.02, 0.001, 0.005, 5.0);
         let mut tilt_pid = PidController::new(0.02, 0.001, 0.005, 5.0);
 
@@ -67,8 +97,12 @@ pub fn spawn_targeting_computer(
 
         let laser_ttl = Duration::from_millis(500);
 
+        // Current expected canvas size is 1280x720
+        // TODO Read camera size from config file
         let optical_center_x = 640.0;
         let optical_center_y = 360.0;
+        // Hardcoded FOV
+        // TODO Read camera FOV from config file
         let degrees_per_pixel_x = 0.05;
         let degrees_per_pixel_y = 0.05;
 

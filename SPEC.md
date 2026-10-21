@@ -55,7 +55,7 @@ Another example:
 }
 ```
 
-The telemetry data has an uptime in milliseconds. As the Raspberry Pi does not have a way to track datetime when the power is off, using uptime is the only real option. The `dest` field likely is not used on the GC side, and relates to the internal Rust representation.
+The telemetry data has an uptime in milliseconds. As the Raspberry Pi does not have a way to track datetime when the power is off, using uptime is the only real option. The `type` field indicates where the telemetry data has been sent from and can be used to de-serialise on the GC.
 
 The `payload` field stores the actual data, in this case the temperature and the predicted location of the target center and laser location. If the system cannot find the target or laser, those values will be null instead.
 

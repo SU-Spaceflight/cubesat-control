@@ -52,7 +52,7 @@ pub fn spawn_cv_pipeline(
 
         let mut last_target: Option<Point> = None;
         let alpha = 0.8; // Smoothing factor
-        let jump_threshold = 100.0;
+        let jump_threshold = 100.0; // How many pixels must the target position move in one frame for the CV to jump directly there and not smooth the motion
 
         loop {
             if rx.changed().await.is_err() {
@@ -112,13 +112,15 @@ pub fn spawn_cv_pipeline(
                     {
                         let area =
                             ellipse.size.width * ellipse.size.height * std::f32::consts::PI / 4.0;
+                        // Generic ellipse size bounds
+                        // TODO Test if these bounds are correct for the actual application
                         if (100.0..100_000.0).contains(&area) {
                             valid_ellipses.push((ellipse, area));
                         }
                     }
                 }
 
-                let center_tolerance = 5.0;
+                let center_tolerance = 5.0; // How close do two ellipse centers need to be to consider them to be concentric
                 let mut found_point = None;
 
                 for i in 0..valid_ellipses.len() {
@@ -134,6 +136,7 @@ pub fn spawn_cv_pipeline(
                         let dy = e1.center.y - e2.center.y;
                         let distance = dx.hypot(dy);
 
+                        // Centers are in the same place and the area difference between them is large enough. (Making sure it's not detecting the same ellipse twice)
                         if distance < center_tolerance && (area1 - area2).abs() > 500.0 {
                             found_point = Some(Point {
                                 x: f32::midpoint(e1.center.x, e2.center.x),
@@ -162,6 +165,8 @@ pub fn spawn_cv_pipeline(
                         opencv::core::AlgorithmHint::ALGO_HINT_DEFAULT,
                     );
                 }
+
+                // Two masks are needed because HSV wraps around at red, so we need a mask for the high values and one for the low values
                 let mut mask1 = opencv::core::Mat::default();
                 let mut mask2 = opencv::core::Mat::default();
                 let mut laser_mask = opencv::core::Mat::default();
@@ -271,7 +276,7 @@ pub fn spawn_targeting_telemetry_watcher(
 
             let msg = TelemetryEnvelope {
                 uptime_ms: start_time.elapsed().as_millis(),
-                data: TelemetryData::Tele(TargetingTele {
+                data: TelemetryData::TargetingTelemetry(TargetingTele {
                     target: latest_cv_state.target,
                     laser: latest_cv_state.laser,
                 }),
