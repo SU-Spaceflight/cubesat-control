@@ -128,7 +128,7 @@ After that, copy the following to the raspberry pi:
 [rsync](https://github.com/RsyncProject/rsync) example:
 
 ```bash
-rsync -avzP lib target/target/aarch64-unknown-linux-gnu/release/cubesat-control {IP-ADDRESS}:~/
+rsync -avzP lib target/aarch64-unknown-linux-gnu/release/cubesat-control {IP-ADDRESS}:~/
 ```
 
 This will place all the files in the Pi's home directory.
