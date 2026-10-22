@@ -85,7 +85,7 @@ async fn main() {
     // config options are defined in config.rs. Default config options are defined in config.toml. To override config values at runtime, environment variables can be used. E.g. `SAT__NETWORK__GROUND_STATION_IP="192.168.1.100" cargo run -r`
     #[allow(clippy::expect_used)]
     let settings = Config::builder()
-        .add_source(File::with_name("config.toml"))
+        .add_source(File::with_name("config/config.toml"))
         .add_source(Environment::with_prefix("SAT").separator("__"))
         .build()
         .expect("Failed to build config");

@@ -2,7 +2,7 @@
 
 A proof of concept satellite controller designed to run on a Raspberry Pi compute module 4. It parses comands, sends telemetry and uses a camera feed to manipulate a gimbal.
 
-For a detailed implementation document, refer to [SPEC.md](SPEC.md).
+For a detailed implementation document, refer to [docs/SPEC.md](docs/SPEC.md).
 
 To use the githooks provided, run `git config core.hooksPath .githooks`.
 
@@ -76,7 +76,7 @@ Logs are mirrored in daily rotating files in `./log/flight_system.log.*` at `deb
 
 ## Configuration
 
-Possible configuration values are defined in [config.rs](src/config.rs). Default values are defined in [config.toml](config.toml). Each configuration value can be overridden when running the program.
+Possible configuration values are defined in [config.rs](src/config.rs). Default values are defined in [config/config.toml](config/config.toml). Each configuration value can be overridden when running the program.
 
 For example, here is how to change the IP of the GC that the satellite tries to connect to.
 
@@ -106,7 +106,7 @@ ffmpeg -framerate 30 -i debug_frames/frame_%05d.jpg -c:v libx264 -pix_fmt yuv420
 > [!NOTE]
 > I have only tested these steps on my machine as of writing this. The steps should be similar for non-NixOS machines, but may differ (maybe easier, maybe not).
 
-For cross-compilation I am using [cross-rs](https://github.com/cross-rs/cross) which creates a docker container that the code is compiled in. In this case, it will create a debian docker environment and cross-compile within it to make use of debians available arm64 packages. [Dockerfile.cross](Dockerfile.cross) is the used configuration file for cross-rs.
+For cross-compilation I am using [cross-rs](https://github.com/cross-rs/cross) which creates a docker container that the code is compiled in. In this case, it will create a debian docker environment and cross-compile within it to make use of Debians available arm64 packages. [build/Dockerfile.cross](build/Dockerfile.cross) is the used configuration file for cross-rs.
 
 ### Steps for cross-compilation
 

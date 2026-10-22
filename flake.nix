@@ -72,7 +72,7 @@
 
             if [ -f "requirements.txt" ]; then
               echo "Installing Python packages from requirements.txt..."
-              pip install -r requirements.txt --quiet
+              pip install -r tools/test-server/requirements.txt --quiet
             else
               echo "No requirements.txt found. Skipping pip install."
             fi
