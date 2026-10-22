@@ -1,0 +1,120 @@
+name: Release CubeSat Controller
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-x86_64:
+    name: Build x86_64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopencv-dev clang libclang-dev pkg-config
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo build --release --features old_cv
+
+      - name: Package Artifacts
+        run: |
+          mkdir -p dist/cubesat-x86_64/config
+          cp target/release/cubesat-control dist/cubesat-x86_64/
+          cp config/config.toml dist/cubesat-x86_64/config/
+          tar -czvf cubesat-x86_64.tar.gz -C dist cubesat-x86_64
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cubesat-x86_64
+          path: cubesat-x86_64.tar.gz
+
+  build-aarch64:
+    name: Build aarch64 (Raspberry Pi)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cross-rs
+        uses: taiki-e/install-action@cross
+
+      - name: Build cross-compilation image
+        run: docker build -t cubesat-cross-image -f build/Dockerfile.cross .
+
+      - name: Build binary
+        run: cross build --target aarch64-unknown-linux-gnu --release --features old_cv
+
+      - name: Extract and Slim Libraries
+        run: |
+          mkdir -p dist/cubesat-aarch64/{lib,config}
+          mkdir -p dist/tmp-lib
+
+          docker run --rm -v "$PWD/dist/tmp-lib:/out" cubesat-cross-image bash -c " \
+            find / -name '*.so*' 2>/dev/null | while read lib; do \
+              if file -L \"\$lib\" 2>/dev/null | grep -q 'aarch64'; then \
+                cp -L \"\$lib\" /out/ 2>/dev/null || true; \
+              fi; \
+            done; \
+            rm -f /out/libc.so* /out/libm.so* /out/libpthread.so* /out/libdl.so* /out/librt.so* /out/libresolv.so* /out/ld-linux-*.so*"
+
+          cp target/aarch64-unknown-linux-gnu/release/cubesat-control dist/cubesat-aarch64/
+          docker run --rm \
+            -v "$PWD/dist/tmp-lib:/tmp-lib" \
+            -v "$PWD/dist/cubesat-aarch64:/artifact" \
+            cubesat-cross-image bash -c " \
+            LD_LIBRARY_PATH=/tmp-lib ldd /artifact/cubesat-control | grep '=> /tmp-lib/' | awk '{print \$3}' | xargs -I {} cp {} /artifact/lib/; \
+            strip --strip-unneeded /artifact/lib/*.so* 2>/dev/null || true"
+
+      - name: Package Artifacts
+        run: |
+          cp config/config.toml dist/cubesat-aarch64/config/
+
+          # Create start.sh dynamically
+          cat << 'EOF' > dist/cubesat-aarch64/start.sh
+          #!/usr/bin/env bash
+          DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+          export LD_LIBRARY_PATH="$DIR/lib:$LD_LIBRARY_PATH"
+          exec "$DIR/cubesat-control" "$@"
+          EOF
+          chmod +x dist/cubesat-aarch64/start.sh
+
+          tar -czvf cubesat-aarch64.tar.gz -C dist cubesat-aarch64
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cubesat-aarch64
+          path: cubesat-aarch64.tar.gz
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-x86_64, build-aarch64]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download x86_64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cubesat-x86_64
+
+      - name: Download aarch64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cubesat-aarch64
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            cubesat-x86_64.tar.gz
+            cubesat-aarch64.tar.gz
+          generate_release_notes: true
