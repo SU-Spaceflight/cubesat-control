@@ -106,7 +106,7 @@ ffmpeg -framerate 30 -i debug_frames/frame_%05d.jpg -c:v libx264 -pix_fmt yuv420
 > [!NOTE]
 > I have only tested these steps on my machine as of writing this. The steps should be similar for non-NixOS machines, but may differ (maybe easier, maybe not).
 
-For cross-compilation I am using [cross-rs](https://github.com/cross-rs/cross) which creates a docker container that the code is compiled in. In this case, it will create a debian docker environment and cross-compile within it to make use of Debians available arm64 packages. [build/Dockerfile.cross](build/Dockerfile.cross) is the used configuration file for cross-rs.
+For cross-compilation I am using [cross-rs](https://github.com/cross-rs/cross) which creates a docker container that the code is compiled in. In this case, it will create a debian docker environment and cross-compile within it to make use of Debians available arm64 packages. [Dockerfile.cross](Dockerfile.cross) is the used configuration file for cross-rs.
 
 ### Steps for cross-compilation
 
