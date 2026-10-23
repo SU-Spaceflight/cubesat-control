@@ -3,7 +3,7 @@ name: Release CubeSat Controller
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
@@ -118,3 +118,5 @@ jobs:
             cubesat-x86_64.tar.gz
             cubesat-aarch64.tar.gz
           generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
