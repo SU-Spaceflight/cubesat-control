@@ -49,7 +49,7 @@ jobs:
         uses: taiki-e/install-action@cross
 
       - name: Build cross-compilation image
-        run: docker build -t cubesat-cross-image -f build/Dockerfile.cross .
+        run: docker build -t cubesat-cross-image -f Dockerfile.cross .
 
       - name: Build binary
         run: cross build --target aarch64-unknown-linux-gnu --release --features old_cv
