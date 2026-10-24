@@ -7,6 +7,7 @@ edition = "2024"
 config = "0.15.27"
 futures-util = "0.3.34"
 rand = { version = "0.10.3", features = ["chacha"] }
+rppal = "0.22.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 tokio = { version = "1.53.2", features = ["full"] }

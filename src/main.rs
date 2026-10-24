@@ -100,8 +100,8 @@ async fn main() {
 
     let start_time = Instant::now();
 
-    let pan_servo = Arc::new(Mutex::new(MockServo::new("Pan Servo", 0, 180.0)));
-    let tilt_servo = Arc::new(Mutex::new(MockServo::new("Tilt Servo", 1, 180.0)));
+    let pan_servo = Box::new(MockServo::new(app_config.hardware.pan_servo));
+    let tilt_servo = Box::new(MockServo::new(app_config.hardware.tilt_servo));
 
     // Channel setup
     let (telemetry_tx, telemetry_rx) = sync::mpsc::channel::<TelemetryEnvelope>(16);
@@ -128,7 +128,7 @@ async fn main() {
     spawn_cv_pipeline(cv_rx, targeting_tx);
     spawn_targeting_computer(targeting_rx.clone(), command_tx.clone());
 
-    spawn_command_arbiter(command_rx, pan_servo.clone(), tilt_servo.clone());
+    spawn_command_arbiter(command_rx, pan_servo, tilt_servo);
 
     run_websocket_client(telemetry_rx, command_tx.clone(), app_config.network).await;
 }

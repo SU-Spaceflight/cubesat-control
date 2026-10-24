@@ -1,10 +1,9 @@
 //! Manages internal command routing. For example, when sent a command to control the gimbal, it will forward that command to the relevant gimbal control system.
 
-use crate::hardware::MockServo;
-use std::sync::{Arc, Mutex};
+use crate::hardware::Servo;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 /// Commands issued locally within the satellite
 ///
@@ -38,36 +37,23 @@ pub enum LocalCommand {
 /// A `JoinHandle` to the spawned Tokio task.
 pub fn spawn_command_arbiter(
     mut rx: mpsc::Receiver<LocalCommand>,
-    pan_servo: Arc<Mutex<MockServo>>,
-    tilt_servo: Arc<Mutex<MockServo>>,
+    mut pan_servo: Box<dyn Servo>,
+    mut tilt_servo: Box<dyn Servo>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
-        // TODO Use config file
-        const MAX_ANGLE: f32 = 90.0;
-        const MIN_ANGLE: f32 = -90.0;
-
         let mut tracking_enabled = true;
-        let mut current_pan = 0.0_f32;
-        let mut current_tilt = 0.0_f32;
 
         while let Some(cmd) = rx.recv().await {
             match cmd {
                 LocalCommand::ManualOverride { pan, tilt } => {
                     tracking_enabled = false;
+                    debug!("Manual override: Pan: {pan:.2}°, Tilt: {tilt:.2}°");
 
-                    current_pan = pan.clamp(MIN_ANGLE, MAX_ANGLE);
-                    current_tilt = tilt.clamp(MIN_ANGLE, MAX_ANGLE);
-
-                    debug!("Manual override: Pan: {current_pan:.2}°, Tilt: {current_tilt:.2}°");
-
-                    if let Ok(mut p) = pan_servo.lock() {
-                        // Converting servo values from -90..90 to 0..180
-                        // TODO Need to revisit once servos are picked out
-                        p.set_absolute(current_pan + 90.0);
+                    if let Err(e) = pan_servo.set_absolute(pan) {
+                        error!("Pan servo hardware fault: {e}");
                     }
-                    if let Ok(mut t) = tilt_servo.lock() {
-                        // See above
-                        t.set_absolute(current_tilt + 90.0);
+                    if let Err(e) = tilt_servo.set_absolute(tilt) {
+                        error!("Tilt servo hardware fault: {e}");
                     }
                 }
                 LocalCommand::AutoTrim {
@@ -75,18 +61,14 @@ pub fn spawn_command_arbiter(
                     tilt_delta,
                 } => {
                     if tracking_enabled {
-                        current_pan = (current_pan + pan_delta).clamp(MIN_ANGLE, MAX_ANGLE);
-                        current_tilt = (current_tilt + tilt_delta).clamp(MIN_ANGLE, MAX_ANGLE);
+                        let new_pan = pan_servo.current_angle() + pan_delta;
+                        let new_tilt = tilt_servo.current_angle() + tilt_delta;
 
-                        tracing::trace!(
-                            "AutoTrim applied. New Pan: {current_pan:.2}, New Tilt: {current_tilt:.2}"
-                        );
-
-                        if let Ok(mut p) = pan_servo.lock() {
-                            p.set_absolute(current_pan + 90.0);
+                        if let Err(e) = pan_servo.set_absolute(new_pan) {
+                            error!("Pan servo hardware fault: {e}");
                         }
-                        if let Ok(mut t) = tilt_servo.lock() {
-                            t.set_absolute(current_tilt + 90.0);
+                        if let Err(e) = tilt_servo.set_absolute(new_tilt) {
+                            error!("Tilt servo hardware fault: {e}");
                         }
                     }
                 }

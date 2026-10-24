@@ -1,3 +1,17 @@
 [network]
 ground_station_ip = "127.0.0.1"
 telemetry_port = 8080
+
+[hardware.pan_servo]
+pin = 18
+min_angle = -90.0
+max_angle = 90.0
+min_pulse_ms = 0.5
+max_pulse_ms = 2.5
+
+[hardware.tilt_servo]
+pin = 19
+min_angle = -90.0
+max_angle = 90.0
+min_pulse_ms = 0.5
+max_pulse_ms = 2.5

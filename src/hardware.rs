@@ -4,9 +4,13 @@
     clippy::cast_possible_truncation,
     clippy::as_conversions,
     clippy::cast_possible_wrap,
-    clippy::arithmetic_side_effects
+    clippy::arithmetic_side_effects,
+    dead_code
 )]
-use std::time::{Duration, Instant};
+use std::{
+    error::Error,
+    time::{Duration, Instant},
+};
 
 use opencv::{
     core::{Mat, Rect, Scalar, Size},
@@ -14,6 +18,7 @@ use opencv::{
     prelude::*,
 };
 use rand::{RngExt, rand_core::UnwrapErr, rngs::SysRng};
+use rppal::pwm::{Channel, Polarity, Pwm};
 use std::sync::{Arc, Mutex};
 use tokio::{
     sync::{mpsc, watch},
@@ -23,6 +28,7 @@ use tokio::{
 use tracing::{debug, error, trace, warn};
 
 use crate::{
+    config::ServoConfig,
     protocol::{CpuTempData, TelemetryData, TelemetryEnvelope},
     vision::RawFrame,
 };
@@ -70,49 +76,105 @@ pub fn spawn_temperature_monitor(
     })
 }
 
+pub trait Servo: Send {
+    fn set_absolute(&mut self, angle: f32) -> Result<(), Box<dyn Error + Send + Sync>>;
+    fn current_angle(&self) -> f32;
+}
+
 /// Fake servo for testing
 pub struct MockServo {
-    name: String,
-    channel: u8,
     current_angle: f32,
-    max_angle: f32,
+    config: ServoConfig,
 }
 impl MockServo {
     /// Creates a new servo
     #[must_use]
-    pub fn new(name: &str, channel: u8, max_angle: f32) -> Self {
+    pub const fn new(config: ServoConfig) -> Self {
         Self {
-            name: name.to_string(),
-            channel,
-            current_angle: 90.0,
-            max_angle,
+            current_angle: 0.0,
+            config,
         }
     }
+}
+impl Servo for MockServo {
+    fn set_absolute(&mut self, angle: f32) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let clamped = angle.clamp(self.config.min_angle, self.config.max_angle);
+        self.current_angle = clamped;
 
-    #[allow(dead_code)]
-    pub fn apply_trim(&mut self, trim_val: f32) {
-        let new_angle = self.current_angle + trim_val;
-        self.set_absolute(new_angle);
-    }
+        let angle_range = self.config.max_angle - self.config.min_angle;
+        let pulse_range = self.config.max_pulse_ms - self.config.min_pulse_ms;
 
-    pub fn set_absolute(&mut self, angle: f32) {
-        self.current_angle = angle.clamp(0.0, self.max_angle);
-        self.update_hardware();
-    }
+        let pulse_ms = f64::mul_add(
+            f64::from((clamped - self.config.min_angle) / angle_range),
+            pulse_range,
+            self.config.min_pulse_ms,
+        );
 
-    // Fake updating that logs what it would send to the servo
-    fn update_hardware(&self) {
-        let pulse_width_ms = 1.0 + (self.current_angle / self.max_angle);
-        let duty_cycle = pulse_width_ms / 20.0;
+        let duty_cycle = pulse_ms / 20.0;
 
         trace!(
-            "Servo: {} (CH {}) | Angle: {:.1}° | Pulse: {:.3}ms | Duty: {:.2}%",
-            self.name,
-            self.channel,
-            self.current_angle,
-            pulse_width_ms,
+            "Setting servo on pin {} to {:.1}° (Duty: {:.2}%)",
+            self.config.pin,
+            clamped,
             duty_cycle * 100.0
         );
+
+        Ok(())
+    }
+
+    fn current_angle(&self) -> f32 {
+        self.current_angle
+    }
+}
+
+pub struct PiServo {
+    pwm: Pwm,
+    config: ServoConfig,
+    current_angle: f32,
+}
+impl PiServo {
+    pub fn new(
+        channel: Channel,
+        config: ServoConfig,
+    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        let pwm = Pwm::with_frequency(channel, 50.0, 0.0, Polarity::Normal, true)?;
+
+        Ok(Self {
+            pwm,
+            config,
+            current_angle: 0.0,
+        })
+    }
+}
+impl Servo for PiServo {
+    fn set_absolute(&mut self, angle: f32) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let clamped = angle.clamp(self.config.min_angle, self.config.max_angle);
+        self.current_angle = clamped;
+
+        let angle_range = self.config.max_angle - self.config.min_angle;
+        let pulse_range = self.config.max_pulse_ms - self.config.min_pulse_ms;
+
+        let pulse_ms = f64::mul_add(
+            f64::from((clamped - self.config.min_angle) / angle_range),
+            pulse_range,
+            self.config.min_pulse_ms,
+        );
+
+        let duty_cycle = pulse_ms / 20.0;
+
+        trace!(
+            "Setting servo on pin {} to {:.1}° (Duty: {:.2}%)",
+            self.config.pin,
+            clamped,
+            duty_cycle * 100.0
+        );
+        self.pwm.set_duty_cycle(duty_cycle)?;
+
+        Ok(())
+    }
+
+    fn current_angle(&self) -> f32 {
+        self.current_angle
     }
 }
 
