@@ -34,6 +34,7 @@ pub struct ServoConfig {
 pub struct ControlConfig {
     pub pan_pid: PidConfig,
     pub tilt_pid: PidConfig,
+    pub camera: CameraConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -42,4 +43,11 @@ pub struct PidConfig {
     pub ki: f32,
     pub kd: f32,
     pub integral_limit: f32,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct CameraConfig {
+    pub width: u32,
+    pub height: u32,
+    pub fov: u32,
 }

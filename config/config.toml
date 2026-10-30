@@ -27,3 +27,8 @@ kp = 0.02
 ki = 0.001
 kd = 0.005
 integral_limit = 5.0
+
+[control.camera]
+width = 4608
+height = 2592
+fov = 120

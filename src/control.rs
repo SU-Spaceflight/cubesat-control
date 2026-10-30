@@ -99,6 +99,7 @@ impl PidController {
 ///
 /// # Returns
 /// A `JoinHandle` to the spawned Tokio task.
+#[allow(clippy::as_conversions, clippy::cast_precision_loss)]
 pub fn spawn_targeting_computer(
     mut rx: watch::Receiver<CvOutput>,
     tx: mpsc::Sender<LocalCommand>,
@@ -113,14 +114,27 @@ pub fn spawn_targeting_computer(
 
         let laser_ttl = Duration::from_millis(500);
 
-        // Current expected canvas size is 1280x720
-        // TODO Read camera size from config file
-        let optical_center_x = 640.0;
-        let optical_center_y = 360.0;
-        // Hardcoded FOV
-        // TODO Read camera FOV from config file
-        let degrees_per_pixel_x = 0.05;
-        let degrees_per_pixel_y = 0.05;
+        let (optical_center_x, optical_center_y, degrees_per_pixel_x, degrees_per_pixel_y) = {
+            let width = config.camera.width as f32;
+            let height = config.camera.height as f32;
+            let diagonal = width.hypot(height);
+
+            let half_dfov_rad = (config.camera.fov as f32 / 2.0).to_radians();
+            let tan_half_dfov = half_dfov_rad.tan();
+
+            let tan_half_horizontal_fov = tan_half_dfov * (width / diagonal);
+            let tan_half_vertical_fov = tan_half_dfov * (height / diagonal);
+
+            let hfov_deg = (2.0 * tan_half_horizontal_fov.atan()).to_degrees();
+            let vfov_deg = (2.0 * tan_half_vertical_fov.atan()).to_degrees();
+
+            (
+                width / 2.0,
+                height / 2.0,
+                hfov_deg / config.camera.width as f32,
+                vfov_deg / config.camera.height as f32,
+            )
+        };
 
         let mut target_acquired = false;
         let mut laser_acquired = false;
