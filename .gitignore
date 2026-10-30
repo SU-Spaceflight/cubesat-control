@@ -9,3 +9,4 @@
 .venv/
 lib/*
 !lib/.gitkeep
+deploy/aarch-release/
