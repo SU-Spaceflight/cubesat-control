@@ -105,8 +105,6 @@ pub fn spawn_targeting_computer(
     config: ControlConfig,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
-        // Placeholder PID values
-        // TODO read from config file
         let mut pan_pid = PidController::from_config(&config.pan_pid);
         let mut tilt_pid = PidController::from_config(&config.tilt_pid);
 
