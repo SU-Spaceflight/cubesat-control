@@ -70,7 +70,7 @@
 
             source .venv/bin/activate
 
-            if [ -f "requirements.txt" ]; then
+            if [ -f "tools/test-server/requirements.txt" ]; then
               echo "Installing Python packages from requirements.txt..."
               pip install -r tools/test-server/requirements.txt --quiet
             else
