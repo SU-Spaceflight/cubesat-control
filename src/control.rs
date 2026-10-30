@@ -10,7 +10,11 @@ use tokio::{
 };
 use tracing::{error, info, trace, warn};
 
-use crate::{arbiter::LocalCommand, vision::CvOutput};
+use crate::{
+    arbiter::LocalCommand,
+    config::{ControlConfig, PidConfig},
+    vision::CvOutput,
+};
 
 /// A standard Proportional-Integral-Derivative (PID) controller.
 ///
@@ -28,6 +32,7 @@ pub struct PidController {
 impl PidController {
     /// Constructs a new `PidController` from given P, I, and D terms, as well as an integral limit.
     #[must_use]
+    #[allow(dead_code)]
     pub const fn new(kp: f32, ki: f32, kd: f32, integral_limit: f32) -> Self {
         Self {
             kp,
@@ -36,6 +41,18 @@ impl PidController {
             integral: 0.0,
             prev_error: 0.0,
             integral_limit,
+        }
+    }
+
+    /// Constructs a `PidController` from a given `PidConfig`.
+    pub const fn from_config(config: &PidConfig) -> Self {
+        Self {
+            kp: config.kp,
+            ki: config.ki,
+            kd: config.kd,
+            integral: 0.0,
+            prev_error: 0.0,
+            integral_limit: config.integral_limit,
         }
     }
 
@@ -85,12 +102,13 @@ impl PidController {
 pub fn spawn_targeting_computer(
     mut rx: watch::Receiver<CvOutput>,
     tx: mpsc::Sender<LocalCommand>,
+    config: ControlConfig,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         // Placeholder PID values
         // TODO read from config file
-        let mut pan_pid = PidController::new(0.02, 0.001, 0.005, 5.0);
-        let mut tilt_pid = PidController::new(0.02, 0.001, 0.005, 5.0);
+        let mut pan_pid = PidController::from_config(&config.pan_pid);
+        let mut tilt_pid = PidController::from_config(&config.tilt_pid);
 
         let mut last_time = Instant::now();
         let mut last_laser_seen = Instant::now();

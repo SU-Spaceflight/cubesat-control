@@ -15,3 +15,15 @@ min_angle = -90.0
 max_angle = 90.0
 min_pulse_ms = 1
 max_pulse_ms = 2
+
+[control.pan_servo]
+kp = 0.02
+ki = 0.001
+kd = 0.005
+integral_limit = 5.0
+
+[control.tilt_servo]
+kp = 0.02
+ki = 0.001
+kd = 0.005
+integral_limit = 5.0

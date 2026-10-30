@@ -139,7 +139,7 @@ async fn main() {
 
     spawn_camera_feed(camera_tx, "tools/target.png");
     spawn_cv_pipeline(cv_rx, targeting_tx);
-    spawn_targeting_computer(targeting_rx.clone(), command_tx.clone());
+    spawn_targeting_computer(targeting_rx.clone(), command_tx.clone(), app_config.control);
 
     spawn_command_arbiter(command_rx, pan_servo, tilt_servo);
 

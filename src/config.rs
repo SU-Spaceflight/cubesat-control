@@ -6,6 +6,7 @@ use serde::Deserialize;
 pub struct SatelliteConfig {
     pub network: NetworkConfig,
     pub hardware: HardwareConfig,
+    pub control: ControlConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -27,4 +28,18 @@ pub struct ServoConfig {
     pub max_angle: f32,
     pub min_pulse_ms: f64,
     pub max_pulse_ms: f64,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ControlConfig {
+    pub pan_pid: PidConfig,
+    pub tilt_pid: PidConfig,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct PidConfig {
+    pub kp: f32,
+    pub ki: f32,
+    pub kd: f32,
+    pub integral_limit: f32,
 }
