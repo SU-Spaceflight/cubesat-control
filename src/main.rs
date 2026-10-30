@@ -36,7 +36,7 @@ use tracing_subscriber::{EnvFilter, Layer};
 use crate::arbiter::{LocalCommand, spawn_command_arbiter};
 use crate::config::SatelliteConfig;
 use crate::control::spawn_targeting_computer;
-use crate::hardware::{MockServo, spawn_camera_feed, spawn_temperature_monitor};
+use crate::hardware::{MockServo, Servo, spawn_camera_feed, spawn_temperature_monitor};
 use crate::protocol::{TelemetryEnvelope, run_websocket_client};
 use crate::vision::{CvOutput, RawFrame, spawn_cv_pipeline, spawn_targeting_telemetry_watcher};
 
@@ -99,9 +99,22 @@ async fn main() {
     info!("Starting mainboard");
 
     let start_time = Instant::now();
-
-    let pan_servo = Box::new(MockServo::new(app_config.hardware.pan_servo));
-    let tilt_servo = Box::new(MockServo::new(app_config.hardware.tilt_servo));
+    let (pan_servo, tilt_servo): (Box<dyn Servo>, Box<dyn Servo>) = {
+        #[cfg(feature = "enable_hardware")]
+        {
+            let pan_servo =
+                Box::new(PiServo::new(Channel::Pwm0, app_config.hardware.pan_servo).unwrap());
+            let tilt_servo =
+                Box::new(PiServo::new(Channel::Pwm1, app_config.hardware.tilt_servo).unwrap());
+            (pan_servo, tilt_servo)
+        }
+        #[cfg(not(feature = "enable_hardware"))]
+        {
+            let pan_servo = Box::new(MockServo::new(app_config.hardware.pan_servo));
+            let tilt_servo = Box::new(MockServo::new(app_config.hardware.tilt_servo));
+            (pan_servo, tilt_servo)
+        }
+    };
 
     // Channel setup
     let (telemetry_tx, telemetry_rx) = sync::mpsc::channel::<TelemetryEnvelope>(16);
@@ -124,7 +137,7 @@ async fn main() {
     spawn_temperature_monitor(telemetry_tx.clone(), start_time);
     spawn_targeting_telemetry_watcher(targeting_rx.clone(), telemetry_tx, start_time);
 
-    spawn_camera_feed(camera_tx, "target.png");
+    spawn_camera_feed(camera_tx, "tools/target.png");
     spawn_cv_pipeline(cv_rx, targeting_tx);
     spawn_targeting_computer(targeting_rx.clone(), command_tx.clone());
 
