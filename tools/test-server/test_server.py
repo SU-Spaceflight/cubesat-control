@@ -64,23 +64,24 @@ async def receive_telemetry(websocket, logger):
 
 
 async def send_commands(websocket, logger):
-    """Simulates sending routed commands and keep-alives to the Pi."""
-    test_commands = [
-        {"dest": "gimbal", "cmd": {"trim_pan": 2.5}},
-        {"dest": "gimbal", "cmd": {"trim_tilt": -8.0}},
-        {"dest": "flight", "cmd": "yaw_right"},
-    ]
-
-    try:
-        while True:
-            for cmd in test_commands:
-                await asyncio.sleep(3)
-                logger.info(f"[COMMAND SENT] Routing to: {cmd['dest']}")
-                await websocket.send(json.dumps(cmd))
-            await asyncio.sleep(10)
-
-    except websockets.exceptions.ConnectionClosed:
-        logger.error("Cubesat disconnected. Halting commands.")
+    pass
+#     """Simulates sending routed commands and keep-alives to the Pi."""
+#     test_commands = [
+#         {"dest": "gimbal", "cmd": {"trim_pan": 2.5}},
+#         {"dest": "gimbal", "cmd": {"trim_tilt": -8.0}},
+#         {"dest": "flight", "cmd": "yaw_right"},
+#     ]
+#
+#     try:
+#         while True:
+#             for cmd in test_commands:
+#                 await asyncio.sleep(3)
+#                 logger.info(f"[COMMAND SENT] Routing to: {cmd['dest']}")
+#                 await websocket.send(json.dumps(cmd))
+#             await asyncio.sleep(10)
+#
+#     except websockets.exceptions.ConnectionClosed:
+#         logger.error("Cubesat disconnected. Halting commands.")
 
 
 async def handle_cubesat(websocket):
@@ -109,7 +110,7 @@ async def handle_cubesat(websocket):
 
 async def main():
     uri = "localhost"
-    port = 8080
+    port = 9000
 
     # Print root startup messages directly to stdout/stderr since they aren't tied to a specific connection
     pathlib.Path("./server-log").mkdir(exist_ok=True)
