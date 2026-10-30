@@ -9,6 +9,7 @@
 )]
 use std::{
     error::Error,
+    fs, io,
     time::{Duration, Instant},
 };
 
@@ -34,9 +35,18 @@ use crate::{
 };
 
 /// Random temperatures
-#[allow(clippy::unused_async)]
-pub async fn temperature_sensor() -> f32 {
+pub fn mock_temperature_sensor() -> f64 {
     UnwrapErr(SysRng).random_range(20.0..100.0)
+}
+
+pub fn temperature_sensor() -> Result<f64, io::Error> {
+    let content = fs::read_to_string("/sys/class/thermal/thermal_zone0/temp")?;
+    let raw_temp: f64 = content
+        .trim()
+        .parse()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+    Ok(raw_temp / 1000.0)
 }
 
 /// Background task to check the CPU temperature every 3 seconds and send the data over the telemetry channel
@@ -55,7 +65,16 @@ pub fn spawn_temperature_monitor(
 
         loop {
             interval.tick().await;
-            let temp = temperature_sensor().await;
+            let temp = {
+                #[cfg(feature = "enable_hardware")]
+                {
+                    temperature_sensor().unwrap()
+                }
+                #[cfg(not(feature = "enable_hardware"))]
+                {
+                    mock_temperature_sensor()
+                }
+            };
 
             if temp < 80.0 {
                 debug!("CPU Temp: {temp:.1}°C");
