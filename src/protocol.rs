@@ -52,7 +52,7 @@ pub enum TelemetryData {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct CpuTempData {
-    pub cpu_temp_c: f32,
+    pub cpu_temp_c: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
